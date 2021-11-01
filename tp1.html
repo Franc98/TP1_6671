@@ -1,0 +1,905 @@
+<!doctype html>
+<html>
+    <head>
+        <title></title>        
+        <style>
+            body{ background-color: grey; }
+            canvas{ background-color: white; }
+			textarea{ background-color: black; foreground-color: white;}
+        </style>
+    </head>
+    <body>
+
+    	<center>    		            
+            <canvas id="my-canvas" width="1000" height="800">
+            	Your browser does not support the HTML5 canvas element.
+    		</canvas>    		
+    	</center>
+
+        <script type="text/javascript" src="js/gl-matrix.js"></script>
+        <script src="js/bezier.js" type="module"></script>
+        
+        <script id="shader-vs" type="x-shader/x-vertex">
+
+            precision highp float;
+
+            attribute vec3 aVertexPosition;
+            attribute vec3 aVertexNormal;
+
+            uniform mat4 modelMatrix;            
+            uniform mat4 viewMatrix;
+            uniform mat4 projMatrix;
+
+            uniform mat4 normalMatrix;
+
+            varying vec3 vNormal;    
+            varying vec3 vPosWorld;  
+
+            void main(void) {
+                gl_Position = projMatrix * viewMatrix * modelMatrix * vec4(aVertexPosition, 1.0);
+
+                vPosWorld=(modelMatrix*vec4(aVertexPosition,1.0)).xyz;    //la posicion en coordenadas de mundo
+                vNormal=(normalMatrix*vec4(aVertexNormal,1.0)).xyz;       //la normal en coordenadas de mundo                
+                
+            }
+        </script>
+
+        <script id="shader-fs" type="x-shader/x-fragment">
+            precision highp float;
+            varying vec3 vNormal;
+            varying vec3 vPosWorld;
+
+            void main(void) {
+
+                vec3 lightVec=normalize(vec3(0.0,3.0,5.0)-vPosWorld);
+                vec3 diffColor=mix(vec3(0.7,0.7,0.7),vNormal,0.4);
+                vec3 color=dot(lightVec,vNormal)*diffColor+vec3(0.2,0.2,0.2);
+
+                //gl_FragColor = vec4(vNormal,1.0); 
+                gl_FragColor = vec4(color,1.0);
+            }
+        </script>
+        
+        <script>
+
+
+            var mat4=glMatrix.mat4;
+            var vec3=glMatrix.vec3;
+            var vec4=glMatrix.vec4;
+
+            var gl = null,
+            canvas = null,
+
+            glProgram = null,
+            fragmentShader = null,
+            vertexShader = null;
+                
+            var vertexPositionAttribute = null,
+            trianglesVerticeBuffer = null,
+            vertexNormalAttribute = null,
+            trianglesNormalBuffer = null,
+            trianglesIndexBuffer = null;
+               
+            var modelMatrix = mat4.create();
+            var viewMatrix = mat4.create();
+            var projMatrix = mat4.create();
+            var normalMatrix = mat4.create();
+            var rotate_angle = -1.57078;
+         
+            function initWebGL(){
+
+                canvas = document.getElementById("my-canvas");  
+
+                try{
+                    gl = canvas.getContext("webgl");      
+
+                }catch(e){
+                    alert(  "Error: Your browser does not appear to support WebGL.");
+                }
+
+                if(gl) {
+
+                    setupWebGL();
+                    initShaders();
+                    setupBuffers();
+                    probarBezier();
+                    probarSuperficieDeBarrido();
+                    setupVertexShaderMatrix();
+                    tick();   
+
+                }else{    
+                    alert(  "Error: Your browser does not appear to support WebGL.");
+                }
+
+            }
+           
+
+            function setupWebGL(){
+                gl.enable(gl.DEPTH_TEST);
+                //set the clear color
+                gl.clearColor(0.1, 0.1, 0.2, 1.0);     
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);     
+    
+                gl.viewport(0, 0, canvas.width, canvas.height);
+
+                // Matrix de Proyeccion Perspectiva
+
+                mat4.perspective(projMatrix,45, canvas.width / canvas.height, 0.1, 100.0);
+                
+                mat4.identity(modelMatrix);
+                mat4.rotate(modelMatrix,modelMatrix, -1.57078, [1.0, 0.0, 0.0]);
+
+                mat4.identity(viewMatrix);
+                mat4.translate(viewMatrix,viewMatrix, [0.0, 0.0, -5.0]);
+            }
+                    
+                    
+            function initShaders() {
+                //get shader source
+                var fs_source = document.getElementById('shader-fs').innerHTML,
+                    vs_source = document.getElementById('shader-vs').innerHTML;
+
+                //compile shaders    
+                vertexShader = makeShader(vs_source, gl.VERTEX_SHADER);
+                fragmentShader = makeShader(fs_source, gl.FRAGMENT_SHADER);
+                
+                //create program
+                glProgram = gl.createProgram();
+                
+                //attach and link shaders to the program
+                gl.attachShader(glProgram, vertexShader);
+                gl.attachShader(glProgram, fragmentShader);
+                gl.linkProgram(glProgram);
+
+                if (!gl.getProgramParameter(glProgram, gl.LINK_STATUS)) {
+                    alert("Unable to initialize the shader program.");
+                }
+                
+                //use program
+                gl.useProgram(glProgram);
+            }
+            
+            function makeShader(src, type){
+                //compile the vertex shader
+                var shader = gl.createShader(type);
+                gl.shaderSource(shader, src);
+                gl.compileShader(shader);
+
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.log("Error compiling shader: " + gl.getShaderInfoLog(shader));
+                }
+                return shader;
+            }
+            
+            function getPos(alfa,beta){
+
+                var r=2;
+                var nx=Math.sin(beta)*Math.sin(alfa);
+                var ny=Math.sin(beta)*Math.cos(alfa);
+                var nz=Math.cos(beta);
+
+
+                var g=beta%0.5;
+                var h=alfa%1;
+                var f=1;
+
+                if (g<0.25) f=0.95;
+                if (h<0.5) f=f*0.95;
+                
+                var x=nx*r*f;
+                var y=ny*r*f;
+                var z=nz*r*f;
+
+                return [x,y,z];
+            }
+
+            function getNrm(alfa,beta){
+                var p=getPos(alfa,beta);
+                var v=vec3.create();
+                vec3.normalize(v,p);
+
+                var delta=0.05;
+                var p1=getPos(alfa,beta);
+                var p2=getPos(alfa,beta+delta);
+                var p3=getPos(alfa+delta,beta);
+
+                var v1=vec3.fromValues(p2[0]-p1[0],p2[1]-p1[1],p2[2]-p1[2]);
+                var v2=vec3.fromValues(p3[0]-p1[0],p3[1]-p1[1],p3[2]-p1[2]);
+
+                vec3.normalize(v1,v1);
+                vec3.normalize(v2,v2);
+                
+                var n=vec3.create();
+                vec3.cross(n,v1,v2);
+                vec3.scale(n,n,-1);
+                return n;
+            }
+
+
+            function setupBuffers()
+            {
+                var pos=[];
+                var normal=[];
+                var r=2;
+                var rows=128;
+                var cols=256;
+
+                for (var i=0;i<rows;i++){
+                    for (var j=0;j<cols;j++){
+
+                        var alfa=j/(cols-1)*Math.PI*2;
+                        var beta=(0.1+i/(rows-1)*0.8)*Math.PI;
+
+                        var p=getPos(alfa,beta);
+
+                        pos.push(p[0]);
+                        pos.push(p[1]);
+                        pos.push(p[2]);
+
+                        var n=getNrm(alfa,beta);
+
+                        normal.push(n[0]);
+                        normal.push(n[1]);
+                        normal.push(n[2]);
+                    }
+
+                }
+      
+                trianglesVerticeBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesVerticeBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);    
+            
+
+                trianglesNormalBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesNormalBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normal), gl.STATIC_DRAW);
+
+                var index=[];
+
+                for (var i=0;i<rows-1;i++){
+                    index.push(i*cols);
+                    for (var j=0;j<cols-1;j++){
+                        index.push(i*cols+j);
+                        index.push((i+1)*cols+j);
+                        index.push(i*cols+j+1);
+                        index.push((i+1)*cols+j+1);
+                    }
+                    index.push((i+1)*cols+cols-1);
+                }
+                
+                
+                trianglesIndexBuffer = gl.createBuffer();
+                trianglesIndexBuffer.number_vertex_point = index.length;
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, trianglesIndexBuffer);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(index), gl.STATIC_DRAW);    
+            }
+
+            /*
+            *
+            *
+            */
+            function bezierRecursivo(puntosDeControl, u, grado)
+            {
+
+                var puntosNuevos = [];
+
+                var xm;
+                var ym;
+                var zm;
+
+                //console.log(grado);
+                //console.log(puntosDeControl[0]);
+                //console.log(puntosDeControl,length);
+
+                for (var i = 0; i < grado; i++) 
+                {
+                    xm = (1-u)*puntosDeControl[3*(i)] + u*puntosDeControl[3*(i+1)];
+                    ym = (1-u)*puntosDeControl[3*(i)+1] + u*puntosDeControl[3*(i+1)+1];
+                    zm = (1-u)*puntosDeControl[3*(i)+2] + u*puntosDeControl[3*(i+1)+2];
+
+                    puntosNuevos.push(xm);
+                    puntosNuevos.push(ym);
+                    puntosNuevos.push(zm);
+                }
+
+                if(grado <= 1)
+                {
+                    xm = puntosDeControl[3] - puntosDeControl[0];
+                    ym = puntosDeControl[4] - puntosDeControl[1];
+                    zm = puntosDeControl[5] - puntosDeControl[2];
+                    var vectorTangente = vec3.fromValues(xm,ym,zm);
+                    vec3.normalize(vectorTangente, vectorTangente);
+
+
+                    return {
+                        puntosNuevos,
+                        vectorTangente
+                    };
+                }
+                else 
+                {
+                    return bezierRecursivo(puntosNuevos, u, grado-1);
+                }
+                
+            }
+
+            function calcularBinormal(puntos)
+            {
+                var longitud = puntos.length;
+
+                var v1 = vec3.fromValues(puntos[longitud-3],puntos[longitud-2],puntos[longitud-1]);
+                var v2 = vec3.fromValues(puntos[longitud-6],puntos[longitud-5],puntos[longitud-4]);
+                var v3 = vec3.fromValues(puntos[longitud-9],puntos[longitud-8],puntos[longitud-7]);
+
+
+                var v12 = vec3.create();
+                var v23 = vec3.create();
+                var binormal = vec3.create();
+
+                var normal = vec3.create();
+                var v32 = vec3.create();
+
+                vec3.sub(v12,v1,v2);
+                vec3.sub(v23,v2,v3);
+
+                vec3.cross(binormal,v12,v23);
+                //vec3.cross(binormal,v23,v12);
+                
+                //console.log(binormal);
+
+                vec3.normalize(binormal, binormal);
+
+                //console.log(binormal);
+
+                // harcodeo binormal eje z
+                //vec3.set(binormal,0.0,0.0,1.0);
+
+                return binormal;
+
+            }
+
+            function bezier(puntosDeControl, cantidadPuntosFinal, grado)
+            {
+
+                // iteracion -1
+                var paso = 1.0/(cantidadPuntosFinal-1);
+                var puntoBezier = bezierRecursivo(puntosDeControl, -paso, grado)
+
+
+
+                var posicion = puntoBezier.puntosNuevos;
+                var tangente = [];
+                var normal = [];
+                var binormal = [];
+
+                var tangenteActual;
+                var binormalActual;
+                var normalActural = vec3.create();
+
+                // itracion 0
+
+                puntoBezier = bezierRecursivo(puntosDeControl, 0.0, grado);
+                posicion.push(puntoBezier.puntosNuevos[0]);
+                posicion.push(puntoBezier.puntosNuevos[1]);
+                posicion.push(puntoBezier.puntosNuevos[2]);
+
+                tangenteActual = puntoBezier.vectorTangente;
+
+                tangente.push(tangenteActual[0]);
+                tangente.push(tangenteActual[1]);
+                tangente.push(tangenteActual[2]);
+
+                for (var i = 1; i<cantidadPuntosFinal+1; i++)
+                {
+                    puntoBezier = bezierRecursivo(puntosDeControl, i*paso, grado);
+                    posicion.push(puntoBezier.puntosNuevos[0]);
+                    posicion.push(puntoBezier.puntosNuevos[1]);
+                    posicion.push(puntoBezier.puntosNuevos[2]);
+
+                    binormalActual = calcularBinormal(posicion);
+                    vec3.cross(normalActural,tangenteActual,binormalActual);
+                    //vec3.cross(normalActural,binormalActual,tangenteActual);
+                    vec3.normalize(normalActural,normalActural)
+
+                    //console.log(tangenteActual);
+                    //console.log(binormalActual);
+                    //console.log(normalActural);
+
+                    normal.push(normalActural[0]);
+                    normal.push(normalActural[1]);
+                    normal.push(normalActural[2]);
+
+                    binormal.push(binormalActual[0]);
+                    binormal.push(binormalActual[1]);
+                    binormal.push(binormalActual[2]);
+
+                    tangenteActual = puntoBezier.vectorTangente;
+
+                    tangente.push(tangenteActual[0]);
+                    tangente.push(tangenteActual[1]);
+                    tangente.push(tangenteActual[2]);
+                }
+
+                // elimino primer y último punto
+                // elimino última tangente
+
+                posicion.pop();
+                posicion.pop();
+                posicion.pop();
+
+                posicion.shift();
+                posicion.shift();
+                posicion.shift();
+
+                tangente.pop();
+                tangente.pop();
+                tangente.pop();
+
+                return{
+                    posicion,
+                    tangente,
+                    normal,
+                    binormal
+                };
+
+            }
+
+            function bezierCompleto(puntosControl,cantidadPuntosFinalTotal, grado)
+            {
+                var cantidadCurvas = Math.floor(puntosControl.length/(3*(grado+1)));
+                var cantidadPuntosPorCurva = Math.ceil(cantidadPuntosFinalTotal/cantidadCurvas);
+                var cantidadPuntosFinal = cantidadPuntosPorCurva*cantidadCurvas;
+
+                var posicion = [];
+                var tangente = [];
+                var normal = [];
+                var binormal = [];
+
+                var puntosControlUsados;
+                var bezier2;
+
+                for(var i = 0; i<cantidadCurvas; i++)
+                {
+                    puntosControlUsados = puntosControl.slice(3*(grado+1)*i,3*(grado+1)*(i+1));
+                    bezier2 = bezier(puntosControlUsados, cantidadPuntosPorCurva, grado);
+                    posicion = posicion.concat(bezier2.posicion);
+                    tangente = tangente.concat(bezier2.tangente);
+                    normal = normal.concat(bezier2.normal);
+                    binormal = binormal.concat(bezier2.binormal);
+                }
+
+                //console.log(normal.length);
+
+                return{
+                    posicion,
+                    tangente,
+                    normal,
+                    binormal,
+                    cantidadPuntosFinal
+                };
+
+            }
+
+            var bezierVerticeBuffer = null;
+            var bezierNormalBuffer = null;
+            var bezierIndexBuffer = null;
+
+            function probarBezier()
+            {
+                /*
+                const vectorVertices = 
+                [
+                    2.0,0.0,0.0,
+                    2.0,2.0,0.0,
+                    0.0,2.0,0.0,
+
+                    0.0,2.0,0.0,
+                    -2.0,2.0,0.0,
+                    -2.0,0.0,0.0,
+
+                    -2.0,0.0,0.0,
+                    -2.0,-2.0,0.0,
+                    0.0,-2.0,0.0,
+
+                    0.0,-2.0,0.0,
+                    2.0,-2.0,0.0,
+                    2.0,0.0,0.0,
+                ];
+                */
+                /*
+                const vectorVertices = 
+                [
+                    -1.0,0.0,0.0,
+                    -1.0,0.0,-1.0,
+                    0.0,0.0,-1.0,
+
+                    0.0,0.0,-1.0,
+                    1.0,0.0,-1.0,
+                    1.0,0.0,0.0,
+                ];
+                */
+                const vectorVertices = 
+                [
+                    -1.0,0.0,0.0,
+                    -1.0,-1.0,0.0,
+                    0.0,-1.0,0.0,
+
+                    0.0,-1.0,0.0,
+                    1.0,-1.0,0.0,
+                    1.0,0.0,0.0,
+                ];
+                
+
+                var puntosBezier = bezierCompleto(vectorVertices,100, 2);
+                var pos = puntosBezier.posicion;
+                var norm = puntosBezier.normal;
+                var puntos = puntosBezier.cantidadPuntosFinal;
+
+                //console.log(puntos);
+                //console.log(pos);
+                //console.log(norm);
+                //console.log(puntosBezier.binormal)
+
+                var indice = [];
+
+                for (let index = 0; index < puntos; index++) 
+                {
+                    indice.push(index);                    
+                }
+
+                bezierVerticeBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, bezierVerticeBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);    
+            
+
+                bezierNormalBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, bezierNormalBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(norm), gl.STATIC_DRAW);
+                
+                
+                bezierIndexBuffer = gl.createBuffer();
+                bezierIndexBuffer.number_vertex_point = indice.length;
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bezierIndexBuffer);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indice), gl.STATIC_DRAW);  
+
+            }
+
+            function calcularValorBufferUVSuperficie(posicionesUoV, cantidadPuntosUoV)
+            {
+                var tablaPosiciones = [0];
+                var puntoAnterior= vec3.create();
+                var puntoSiguiente = vec3.fromValues(posicionesUoV[0],posicionesUoV[1],posicionesUoV[2]);
+                var distancia;
+                var max;
+                for(var i = 1; i < cantidadPuntosUoV; i++)
+                {
+                    vec3.copy(puntoAnterior,puntoSiguiente);
+                    vec3.set(puntoSiguiente,posicionesUoV[3*(i-1)],posicionesUoV[3*(i-1)+1],posicionesUoV[3*(i-1)+2]);
+                    distancia = vec3.distance(puntoAnterior, puntoSiguiente);
+                    tablaPosiciones.push(tablaPosiciones[i-1]+distancia);
+                }
+                max = tablaPosiciones[cantidadPuntosUoV-1];
+                for(var i = 0; i < cantidadPuntosUoV; i++)
+                {
+                    tablaPosiciones[i] = tablaPosiciones[i]/max;
+                }
+                return tablaPosiciones;
+            }
+
+            function obtenerMatricesTransformacion(recorrido, punto)
+            {
+                var normal = recorrido.normal;
+                var posicion = recorrido.posicion;
+                var tangente = recorrido.tangente;
+                var binormal = recorrido.binormal;
+
+                var a = [];
+
+                a.push(normal[3*punto]);
+                a.push(normal[3*punto+1]);
+                a.push(normal[3*punto+2]);
+                a.push(0);
+                a.push(binormal[3*punto]);
+                a.push(binormal[3*punto+1]);
+                a.push(binormal[3*punto+2]);
+                a.push(0);
+                a.push(tangente[3*punto]);
+                a.push(tangente[3*punto+1]);
+                a.push(tangente[3*punto+2]);
+                a.push(0);
+                a.push(posicion[3*punto]);
+                a.push(posicion[3*punto+1]);
+                a.push(posicion[3*punto+2]);
+                a.push(1);
+
+                var matrizModelado = mat4.fromValues(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15]);
+                var matrizNormal = mat4.create();
+                
+                mat4.invert(matrizNormal,matrizModelado);
+                mat4.transpose(matrizNormal,matrizNormal);
+                
+                return{
+                    matrizModelado,
+                    matrizNormal
+                };
+            }
+
+            function obtenerTransformacionNivel(nivel, matrizModelado, matrizNormal, bufferU, valorV)
+            {
+                var bufferPuntos = [];
+                var bufferNormales = [];
+                var bufferUV = [];
+                var punto = vec3.create();
+                var normal = vec4.create();
+                //console.log(mat4.determinant(matrizNormal));
+                //console.log(matrizNormal);
+                for(var i = 0; i<nivel.cantidadPuntosFinal; i++)
+                {   
+                    vec3.set(punto,nivel.posicion[3*i],nivel.posicion[3*i+1],nivel.posicion[3*i+2]);
+                    vec4.set(normal,nivel.normal[3*i],nivel.normal[3*i+1],nivel.normal[3*i+2],1);
+                    //console.log(normal);
+                    vec3.transformMat4(punto,punto,matrizModelado);
+                    vec4.transformMat4(normal,normal,matrizNormal);
+                    //console.log(normal);
+                    //invierto signo normal
+                    vec4.scale(normal,normal,-1);
+
+                    bufferPuntos.push(punto[0],punto[1],punto[2]);
+                    bufferNormales.push(normal[0],normal[1],normal[2]);
+                    bufferUV.push(bufferU[i],valorV);
+                }
+                return{
+                    bufferPuntos,
+                    bufferNormales,
+                    bufferUV
+                };
+            }
+
+            function obtenerIndexBuffer(cantidadFilas, cantidadColumnas)
+            {
+                var indexBuffer=[];  
+                //indexBuffer=[0,1,2,2,1,3]; // Estos valores iniciales harcodeados solo dibujan 2 triangulos, REMOVER ESTA LINEA!
+
+                var verticeSuperior;
+                var verticeinferior;
+                
+                for (i=0; i < cantidadFilas-1; i++) {
+                    verticeSuperior = i*(cantidadFilas);
+                    verticeinferior = (i+1)*(cantidadFilas);
+                    for (j=0; j < cantidadColumnas-1; j++) {
+
+                        indexBuffer.push(verticeSuperior);
+                        indexBuffer.push(verticeinferior);
+
+                        verticeSuperior = verticeSuperior + 1;
+                        verticeinferior = verticeinferior + 1;
+                        
+                    }
+
+                    // oara el cambio de linea
+                    indexBuffer.push(verticeSuperior);
+                    indexBuffer.push(verticeinferior);
+
+                    indexBuffer.push(verticeinferior);
+                    indexBuffer.push((i+1)*(cantidadFilas));
+
+                    
+                }
+                return indexBuffer;
+            }
+
+            function generarSuperficieDeBarrido(puntosControlRecorrido, cantidadPuntosRecorrido, gradoRecorrido, puntosControlNivel, cantidadPuntosNivel, gradoNivel)
+            {
+                var recorrido = bezierCompleto(puntosControlRecorrido, cantidadPuntosRecorrido, gradoRecorrido);
+                var nivel = bezierCompleto(puntosControlNivel, cantidadPuntosNivel, gradoNivel);
+
+                var nivelNuevo;
+                var matrices;
+
+                var bufferPuntos = [];
+                var bufferNormales = [];
+                var bufferUV = [];
+                var bufferIndices;
+
+                var bufferU = calcularValorBufferUVSuperficie(nivel.posicion,nivel.cantidadPuntosFinal);
+                var bufferV = calcularValorBufferUVSuperficie(recorrido.posicion,recorrido.cantidadPuntosFinal);
+
+                for (var i = 0; i < recorrido.cantidadPuntosFinal; i++) 
+                
+                {
+                    matrices = obtenerMatricesTransformacion(recorrido,i);
+                    nivelNuevo = obtenerTransformacionNivel(nivel, matrices.matrizModelado, matrices.matrizNormal, bufferU, bufferV[i]);
+                    bufferPuntos = bufferPuntos.concat(nivelNuevo.bufferPuntos);
+                    bufferNormales = bufferNormales.concat(nivelNuevo.bufferNormales);
+                    bufferUV = bufferUV.concat(nivelNuevo.bufferUV);
+                    
+                }
+                bufferIndices = obtenerIndexBuffer(nivel.cantidadPuntosFinal, recorrido.cantidadPuntosFinal);
+
+                return{
+                    bufferPuntos,
+                    bufferNormales,
+                    bufferUV,
+                    bufferIndices
+                };
+
+            }
+
+            var sBVerticeBuffer;
+            var sBNormalBuffer;
+            var sBIndexBuffer;
+
+            function probarSuperficieDeBarrido()
+            {
+                const nivelControl = 
+                [
+                    0.5,0.0,0.0,
+                    0.5,0.5,0.0,
+                    0.0,0.5,0.0,
+
+                    0.0,0.5,0.0,
+                    -0.5,0.5,0.0,
+                    -0.5,0.0,0.0,
+
+                    -0.5,0.0,0.0,
+                    -0.5,-0.5,0.0,
+                    0.0,-0.5,0.0,
+
+                    0.0,-0.5,0.0,
+                    0.5,-0.5,0.0,
+                    0.5,0.0,0.0,
+                ];
+                /*
+                const recorridoControl = 
+                [
+                    -1.0,0.0,0.0,
+                    -1.0,0.0,-1.0,
+                    0.0,0.0,-1.0,
+
+                    0.0,0.0,-1.0,
+                    1.0,0.0,-1.0,
+                    1.0,0.0,0.0,
+                ];
+                */
+                /*
+                const recorridoControl = 
+                [
+                    -1.0,0.0,0.0,
+                    -1.0,0.0,1.0,
+                    0.0,0.0,1.0,
+
+                    0.0,0.0,1.0,
+                    1.0,0.0,1.0,
+                    1.0,0.0,0.0,
+                ];
+                */
+                
+                const recorridoControl = 
+                [
+                    -1.0,0.0,0.0,
+                    -1.0,-1.0,0.0,
+                    0.0,-1.0,0.0,
+
+                    0.0,-1.0,0.0,
+                    1.0,-1.0,0.0,
+                    1.0,0.0,0.0,
+                ];
+                
+                var buffers = generarSuperficieDeBarrido(recorridoControl,100,2,nivelControl,100,2);
+
+                console.log(buffers.bufferPuntos);
+                console.log(buffers.bufferNormales);
+                console.log(buffers.bufferIndices);
+
+                sBVerticeBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, sBVerticeBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffers.bufferPuntos), gl.STATIC_DRAW);    
+            
+
+                sBNormalBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, sBNormalBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffers.bufferNormales), gl.STATIC_DRAW);
+                
+                
+                sBIndexBuffer = gl.createBuffer();
+                sBIndexBuffer.number_vertex_point = buffers.bufferIndices.length;
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sBIndexBuffer);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(buffers.bufferIndices), gl.STATIC_DRAW);  
+
+                //console.log(sBIndexBuffer.number_vertex_point);
+
+            }
+            
+            function setupVertexShaderMatrix(){
+                var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
+                var viewMatrixUniform  = gl.getUniformLocation(glProgram, "viewMatrix");
+                var projMatrixUniform  = gl.getUniformLocation(glProgram, "projMatrix");
+                var normalMatrixUniform  = gl.getUniformLocation(glProgram, "normalMatrix");
+
+                gl.uniformMatrix4fv(modelMatrixUniform, false, modelMatrix);
+                gl.uniformMatrix4fv(viewMatrixUniform, false, viewMatrix);
+                gl.uniformMatrix4fv(projMatrixUniform, false, projMatrix);
+                gl.uniformMatrix4fv(normalMatrixUniform, false, normalMatrix);
+            }                  
+            
+            function drawScene(){
+                setupVertexShaderMatrix();
+                
+                /*
+                vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
+                gl.enableVertexAttribArray(vertexPositionAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, bezierVerticeBuffer);
+                gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
+                gl.enableVertexAttribArray(vertexNormalAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, bezierNormalBuffer);
+                gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bezierIndexBuffer);
+                gl.drawElements( gl.LINE_STRIP, bezierIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
+                */
+                /*
+                vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
+                gl.enableVertexAttribArray(vertexPositionAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesVerticeBuffer);
+                gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
+                gl.enableVertexAttribArray(vertexNormalAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, trianglesNormalBuffer);
+                gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, trianglesIndexBuffer);
+                gl.drawElements( gl.TRIANGLE_STRIP, trianglesIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
+                */
+                
+                vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
+                gl.enableVertexAttribArray(vertexPositionAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, sBVerticeBuffer);
+                gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
+                gl.enableVertexAttribArray(vertexNormalAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, sBNormalBuffer);
+                gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sBIndexBuffer);
+                gl.drawElements( gl.TRIANGLE_STRIP, sBIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
+                
+                //gl.drawElements( gl.LINE_STRIP, sBIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
+
+            }
+
+ 
+
+
+
+            function animate(){
+                
+                rotate_angle += 0.01;
+                mat4.identity(modelMatrix);
+                //mat4.rotate(modelMatrix,modelMatrix, rotate_angle, [1.0, 0.0, 1.0]);
+
+
+                mat4.identity(normalMatrix);
+                mat4.multiply(normalMatrix,viewMatrix,modelMatrix);
+                mat4.invert(normalMatrix,normalMatrix);
+                mat4.transpose(normalMatrix,normalMatrix);
+
+            }
+            
+            function tick(){
+
+                requestAnimationFrame(tick);
+                drawScene();
+                animate();
+            }
+
+            window.onload=initWebGL;
+
+        </script>
+
+
+    </body>
+</html>
