@@ -85,6 +85,9 @@
             var projMatrix = mat4.create();
             var normalMatrix = mat4.create();
             var rotate_angle = -1.57078;
+
+            var buffersSupBarrido;
+            var objetos3D;
          
             function initWebGL(){
 
@@ -105,6 +108,7 @@
                     probarBezier();
                     probarSuperficieDeBarrido();
                     setupVertexShaderMatrix();
+                    inicializarObjetos();
                     tick();   
 
                 }else{    
@@ -287,9 +291,6 @@
                 var ym;
                 var zm;
 
-                //console.log(grado);
-                //console.log(puntosDeControl[0]);
-                //console.log(puntosDeControl,length);
 
                 for (var i = 0; i < grado; i++) 
                 {
@@ -345,11 +346,9 @@
                 vec3.cross(binormal,v12,v23);
                 //vec3.cross(binormal,v23,v12);
                 
-                //console.log(binormal);
 
                 vec3.normalize(binormal, binormal);
 
-                //console.log(binormal);
 
                 // harcodeo binormal eje z
                 //vec3.set(binormal,0.0,0.0,1.0);
@@ -400,10 +399,6 @@
                     vec3.cross(normalActural,tangenteActual,binormalActual);
                     //vec3.cross(normalActural,binormalActual,tangenteActual);
                     vec3.normalize(normalActural,normalActural)
-
-                    //console.log(tangenteActual);
-                    //console.log(binormalActual);
-                    //console.log(normalActural);
 
                     normal.push(normalActural[0]);
                     normal.push(normalActural[1]);
@@ -467,8 +462,6 @@
                     normal = normal.concat(bezier2.normal);
                     binormal = binormal.concat(bezier2.binormal);
                 }
-
-                //console.log(normal.length);
 
                 return{
                     posicion,
@@ -535,11 +528,6 @@
                 var norm = puntosBezier.normal;
                 var puntos = puntosBezier.cantidadPuntosFinal;
 
-                //console.log(puntos);
-                //console.log(pos);
-                //console.log(norm);
-                //console.log(puntosBezier.binormal)
-
                 var indice = [];
 
                 for (let index = 0; index < puntos; index++) 
@@ -586,7 +574,7 @@
                 return tablaPosiciones;
             }
 
-            function obtenerMatricesTransformacion(recorrido, punto)
+            function obtenerMatricesTransformacion(recorrido, matrizRotoEscalado, punto)
             {
                 var normal = recorrido.normal;
                 var posicion = recorrido.posicion;
@@ -613,6 +601,7 @@
                 a.push(1);
 
                 var matrizModelado = mat4.fromValues(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15]);
+                mat4.multiply(matrizModelado, matrizRotoEscalado, matrizModelado);
                 var matrizNormal = mat4.create();
                 
                 mat4.invert(matrizNormal,matrizModelado);
@@ -624,6 +613,25 @@
                 };
             }
 
+            function obtnerMatrixRotoEscalado(escalados,angulosRotacion,vectoresRotacion, paso)
+            {
+                var matrixRotoEscalado = mat4.create();
+                var vectorRotacion;
+                var vectorEscalado;
+                mat4.identity(matrixRotoEscalado);
+                if (angulosRotacion != null)
+                {
+                    vectorRotacion = vec3.fromValues(vectoresRotacion[3*paso],vectoresRotacion[3*paso+1],vectoresRotacion[3*paso+2])
+                    mat4.rotate(matrixRotoEscalado,matrixRotoEscalado,angulosRotacion[paso],vectorRotacion);
+                }
+                if (escalados != null)
+                {
+                    vectorEscalado = vec3.fromValues(escalados[3*paso],escalados[3*paso+1],escalados[3*paso+2])
+                    mat4.scale(matrixRotoEscalado,matrixRotoEscalado,vectorEscalado);
+                }
+                return matrixRotoEscalado;
+            }
+
             function obtenerTransformacionNivel(nivel, matrizModelado, matrizNormal, bufferU, valorV)
             {
                 var bufferPuntos = [];
@@ -631,16 +639,12 @@
                 var bufferUV = [];
                 var punto = vec3.create();
                 var normal = vec4.create();
-                //console.log(mat4.determinant(matrizNormal));
-                //console.log(matrizNormal);
                 for(var i = 0; i<nivel.cantidadPuntosFinal; i++)
                 {   
                     vec3.set(punto,nivel.posicion[3*i],nivel.posicion[3*i+1],nivel.posicion[3*i+2]);
                     vec4.set(normal,nivel.normal[3*i],nivel.normal[3*i+1],nivel.normal[3*i+2],1);
-                    //console.log(normal);
                     vec3.transformMat4(punto,punto,matrizModelado);
                     vec4.transformMat4(normal,normal,matrizNormal);
-                    //console.log(normal);
                     //invierto signo normal
                     vec4.scale(normal,normal,-1);
 
@@ -664,8 +668,8 @@
                 var verticeinferior;
                 
                 for (i=0; i < cantidadFilas-1; i++) {
-                    verticeSuperior = i*(cantidadFilas);
-                    verticeinferior = (i+1)*(cantidadFilas);
+                    verticeSuperior = i*(cantidadColumnas);
+                    verticeinferior = (i+1)*(cantidadColumnas);
                     for (j=0; j < cantidadColumnas-1; j++) {
 
                         indexBuffer.push(verticeSuperior);
@@ -681,20 +685,82 @@
                     indexBuffer.push(verticeinferior);
 
                     indexBuffer.push(verticeinferior);
-                    indexBuffer.push((i+1)*(cantidadFilas));
+                    indexBuffer.push((i+1)*(cantidadColumnas));
 
                     
                 }
                 return indexBuffer;
             }
 
-            function generarSuperficieDeBarrido(puntosControlRecorrido, cantidadPuntosRecorrido, gradoRecorrido, puntosControlNivel, cantidadPuntosNivel, gradoNivel)
+            function calcularValorBufferUVTapas(posicionesTapa, cantidadPuntos)
             {
-                var recorrido = bezierCompleto(puntosControlRecorrido, cantidadPuntosRecorrido, gradoRecorrido);
-                var nivel = bezierCompleto(puntosControlNivel, cantidadPuntosNivel, gradoNivel);
+                var bufferUVBorde = [];
+                var bufferUVCentro = [];
+                var xmax = posicionesTapa[0];
+                var xmin = xmax;
+                var ymax = posicionesTapa[1];
+                var ymin = ymax;
+                var xaux;
+                var yaux;
+                var xpromedio = xmax;
+                var ypromedio = ymax;
 
+                for(var i = 1; i < cantidadPuntos; i++)
+                {
+                    xaux = posicionesTapa[3*i];
+                    yaux = posicionesTapa[3*i+1];
+                    xpromedio += xaux;
+                    ypromedio += yaux;
+                    if(xaux > xmax)
+                    {
+                        xmax = xaux;
+                    }
+                    if(xaux < xmin)
+                    {
+                        xmin = xaux;
+                    }
+                    if(yaux > ymax)
+                    {
+                        ymax = yaux;
+                    }
+                    if(yaux < ymin)
+                    {
+                        ymin = yaux;
+                    }
+                }
+                xpromedio = xpromedio/cantidadPuntos;
+                ypromedio = ypromedio/cantidadPuntos;
+                var xdif = xmax-xmin;
+                var ydif = ymax-ymin;
+
+                xaux = xpromedio - xmin;
+                xpromedio = xaux/xdif;
+                yaux = ypromedio - ymin;
+                ypromedio = yaux/ydif;
+
+                for(var i = 0; i < cantidadPuntos; i++)
+                {
+                    xaux = posicionesTapa[3*i] - xmin;
+                    xaux = xaux/xdif;
+                    yaux = posicionesTapa[3*i+1] - ymin;
+                    yaux = yaux/ydif;
+                    bufferUVBorde.push(xaux);
+                    bufferUVBorde.push(yaux);
+                    bufferUVCentro.push(xpromedio);
+                    bufferUVCentro.push(ypromedio);
+                }
+                return{
+                    bufferUVBorde,
+                    bufferUVCentro
+                };
+                  
+            }
+
+            function generarSuperficieDeBarrido(nivel,recorrido,escalados = null,angulosRotacion = null)
+            {
                 var nivelNuevo;
                 var matrices;
+                var matrizRotoEscalado;
 
                 var bufferPuntos = [];
                 var bufferNormales = [];
@@ -707,14 +773,15 @@
                 for (var i = 0; i < recorrido.cantidadPuntosFinal; i++) 
                 
                 {
-                    matrices = obtenerMatricesTransformacion(recorrido,i);
+                    matrizRotoEscalado = obtnerMatrixRotoEscalado(escalados, angulosRotacion, recorrido.tangente, i);
+                    matrices = obtenerMatricesTransformacion(recorrido, matrizRotoEscalado, i);    
                     nivelNuevo = obtenerTransformacionNivel(nivel, matrices.matrizModelado, matrices.matrizNormal, bufferU, bufferV[i]);
                     bufferPuntos = bufferPuntos.concat(nivelNuevo.bufferPuntos);
                     bufferNormales = bufferNormales.concat(nivelNuevo.bufferNormales);
                     bufferUV = bufferUV.concat(nivelNuevo.bufferUV);
                     
                 }
-                bufferIndices = obtenerIndexBuffer(nivel.cantidadPuntosFinal, recorrido.cantidadPuntosFinal);
+                bufferIndices = obtenerIndexBuffer(recorrido.cantidadPuntosFinal, nivel.cantidadPuntosFinal);
 
                 return{
                     bufferPuntos,
@@ -725,12 +792,231 @@
 
             }
 
+            function superficieBarridoCompleta(nivel,recorrido,escalados = null,angulosRotacion = null,tapaInicial = true, tapaFinal = true)
+            {
+                var buffersSuperficie = generarSuperficieDeBarrido(nivel, recorrido, escalados, angulosRotacion);
+                var tangenteRecorrido;
+                var centroTapaX = 0;
+                var centroTapaY = 0;
+                var centroTapaZ = 0;
+                var puntosTapa;
+                var cantidadFilas = recorrido.cantidadPuntosFinal;
+                var cantidadFilasFinal = cantidadFilas;
+                var cantidadColumnas = nivel.cantidadPuntosFinal;
+                var cantidadTotalPuntos = cantidadFilas*cantidadColumnas;
+
+
+                var bufferPosicion = [];
+                var bufferNormal = [];
+                var bufferUV = [];
+                var bufferIndice;
+
+                var bufferUVAux = calcularValorBufferUVTapas(nivel.posicion, cantidadColumnas);
+                
+                if(tapaInicial)
+                {
+                    puntosTapa = buffersSuperficie.bufferPuntos.slice(0,3*cantidadColumnas);
+                    tangenteRecorrido = recorrido.tangente.slice(0,3);
+                    tangenteRecorrido = vec3.scale(tangenteRecorrido,tangenteRecorrido,-1);
+                    //console.log(tangenteRecorrido);
+                    centroTapaX = 0;
+                    centroTapaY = 0;
+                    centroTapaZ = 0;
+                    for(var i = 0; i < cantidadColumnas; i++ )
+                    {
+                        centroTapaX += puntosTapa[3*i];
+                        centroTapaY += puntosTapa[3*i+1];
+                        centroTapaZ += puntosTapa[3*i+2];
+                        bufferNormal.push(tangenteRecorrido[0],tangenteRecorrido[1],tangenteRecorrido[2]);
+                        bufferNormal.push(tangenteRecorrido[0],tangenteRecorrido[1],tangenteRecorrido[2]);
+                    }
+                    centroTapaX = centroTapaX/cantidadColumnas;
+                    centroTapaY = centroTapaY/cantidadColumnas;
+                    centroTapaZ = centroTapaZ/cantidadColumnas;
+
+                    for(var i = 0; i < cantidadColumnas; i++ )
+                    {
+                        bufferPosicion.push(centroTapaX,centroTapaY,centroTapaZ);
+                    }
+                    for(var i = 0; i < cantidadColumnas; i++ )
+                    {
+                        bufferPosicion.push(puntosTapa[3*i],puntosTapa[3*i+1],puntosTapa[3*i+2]);
+                    }
+                    
+                    bufferUV = bufferUV.concat(bufferUVAux.bufferUVCentro);
+                    bufferUV = bufferUV.concat(bufferUVAux.bufferUVBorde);
+
+                    cantidadFilasFinal += 2;
+                }
+
+                bufferPosicion = bufferPosicion.concat(buffersSuperficie.bufferPuntos);
+                bufferNormal = bufferNormal.concat(buffersSuperficie.bufferNormales);
+                bufferUV = bufferUV.concat(buffersSuperficie.bufferUV);
+
+                if(tapaFinal)
+                {
+                    puntosTapa = buffersSuperficie.bufferPuntos.slice(3*(cantidadTotalPuntos-cantidadColumnas),3*cantidadTotalPuntos);
+                    tangenteRecorrido = recorrido.tangente.slice(3*(cantidadFilas-1),3*cantidadFilas);
+                    centroTapaX = 0;
+                    centroTapaY = 0;
+                    centroTapaZ = 0;
+                    for(var i = 0; i < cantidadColumnas; i++ )
+                    {
+                        centroTapaX += puntosTapa[3*i];
+                        centroTapaY += puntosTapa[3*i+1];
+                        centroTapaZ += puntosTapa[3*i+2];
+                        bufferNormal.push(tangenteRecorrido[0],tangenteRecorrido[1],tangenteRecorrido[2]);
+                        bufferNormal.push(tangenteRecorrido[0],tangenteRecorrido[1],tangenteRecorrido[2]);
+                        bufferPosicion.push(puntosTapa[3*i],puntosTapa[3*i+1],puntosTapa[3*i+2]);                        
+                    }
+                    centroTapaX = centroTapaX/cantidadColumnas;
+                    centroTapaY = centroTapaY/cantidadColumnas;
+                    centroTapaZ = centroTapaZ/cantidadColumnas;
+
+                    for(var i = 0; i < cantidadColumnas; i++ )
+                    {
+                        bufferPosicion.push(centroTapaX,centroTapaY,centroTapaZ);
+                    }
+                    bufferUV = bufferUV.concat(bufferUVAux.bufferUVBorde);
+                    bufferUV = bufferUV.concat(bufferUVAux.bufferUVCentro);
+                    cantidadFilasFinal += 2;
+                }
+
+                bufferIndice = obtenerIndexBuffer(cantidadFilasFinal,cantidadColumnas);
+
+                var supBarridoVerticeBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, supBarridoVerticeBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(bufferPosicion), gl.STATIC_DRAW);    
+            
+
+                var supBarridoNormalBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, supBarridoNormalBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(bufferNormal), gl.STATIC_DRAW);
+                
+                
+                var supBarridoIndexBuffer = gl.createBuffer();
+                supBarridoIndexBuffer.number_vertex_point = bufferIndice.length;
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, supBarridoIndexBuffer);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(bufferIndice), gl.STATIC_DRAW); 
+
+
+                return {
+                    supBarridoVerticeBuffer,
+                    supBarridoNormalBuffer,
+                    supBarridoIndexBuffer
+                };
+            }
+
+            function generarRecta(longitud)
+            {
+                var posicion = [-longitud/2,0.0,0.0,longitud/2,0.0,0.0];
+                var tangente = [1.0,0.0,0.0,1.0,0.0,0.0];
+                var normal = [0.0,0.0,1.0,0.0,0.0,1.0];
+                var binormal = [0.0,1.0,0.0,0.0,1.0,0.0];
+                var cantidadPuntosFinal = 2;
+                return{
+                    posicion,
+                    tangente,
+                    normal,
+                    binormal,
+                    cantidadPuntosFinal
+                };
+            }
+            
+            function generarRectangulo(base, altura)
+            {
+                var posicion = 
+                [
+                    base/2,altura/2,0.0,
+                    -base/2,altura/2,0.0,
+                    -base/2,altura/2,0.0,
+                    -base/2,-altura/2,0.0,
+                    -base/2,-altura/2,0.0,
+                    base/2,-altura/2,0.0,
+                    base/2,-altura/2,0.0,
+                    base/2,altura/2,0.0
+                ];
+                var tangente = 
+                [
+                    -1.0,0.0,0.0,
+                    -1.0,0.0,0.0,
+                    0.0,-1.0,0.0,
+                    0.0,-1.0,0.0,
+                    1.0,0.0,0.0,
+                    1.0,0.0,0.0,
+                    0.0,1.0,0.0,
+                    0.0,1.0,0.0
+                ];
+                var normal = 
+                [
+                    0.0,-1.0,0.0,
+                    0.0,-1.0,0.0,
+                    1.0,0.0,0.0,
+                    1.0,0.0,0.0,
+                    0.0,1.0,0.0,
+                    0.0,1.0,0.0,
+                    -1.0,0.0,0.0,
+                    -1.0,0.0,0.0
+                ];
+                var binormal = 
+                [
+                    0.0,0.0,-1.0,
+                    0.0,0.0,-1.0,
+                    0.0,0.0,-1.0,
+                    0.0,0.0,-1.0,
+                    0.0,0.0,-1.0,
+                    0.0,0.0,-1.0,
+                    0.0,0.0,-1.0,
+                    0.0,0.0,-1.0
+                ];
+                var cantidadPuntosFinal = 8;
+                return{
+                    posicion,
+                    tangente,
+                    normal,
+                    binormal,
+                    cantidadPuntosFinal
+                };
+            }
+
+            function generarArcoCircunferencia(radio,cantidadPuntos,anguloEnGrados=360)
+            {
+                var anguloMax = anguloEnGrados*Math.PI/180;
+                var pasoAngulo = anguloMax/(cantidadPuntos-1);
+                var posicion = [];
+                var tangente = [];
+                var normal = [];
+                var binormal = [];
+                var cantidadPuntosFinal = cantidadPuntos;
+                var coseno;
+                var seno;
+                var angulo;
+                for(var i=0; i<cantidadPuntos;i++)
+                {   
+                    angulo = pasoAngulo*i;
+                    coseno = Math.cos(angulo);
+                    seno = Math.sin(angulo);
+                    posicion.push(radio*coseno,radio*seno,0.0);
+                    tangente.push(-seno,coseno,0.0);
+                    normal.push(-coseno,-seno,0.0);
+                    binormal.push(0.0,0.0,-1.0);
+                }
+                return{
+                    posicion,
+                    tangente,
+                    normal,
+                    binormal,
+                    cantidadPuntosFinal
+                };
+            }
+            
             var sBVerticeBuffer;
             var sBNormalBuffer;
             var sBIndexBuffer;
 
             function probarSuperficieDeBarrido()
             {
+                
                 const nivelControl = 
                 [
                     0.5,0.0,0.0,
@@ -749,7 +1035,7 @@
                     0.5,-0.5,0.0,
                     0.5,0.0,0.0,
                 ];
-                /*
+                
                 const recorridoControl = 
                 [
                     -1.0,0.0,0.0,
@@ -760,20 +1046,8 @@
                     1.0,0.0,-1.0,
                     1.0,0.0,0.0,
                 ];
-                */
-                /*
-                const recorridoControl = 
-                [
-                    -1.0,0.0,0.0,
-                    -1.0,0.0,1.0,
-                    0.0,0.0,1.0,
-
-                    0.0,0.0,1.0,
-                    1.0,0.0,1.0,
-                    1.0,0.0,0.0,
-                ];
-                */
                 
+                /*
                 const recorridoControl = 
                 [
                     -1.0,0.0,0.0,
@@ -784,12 +1058,17 @@
                     1.0,-1.0,0.0,
                     1.0,0.0,0.0,
                 ];
+                */
                 
-                var buffers = generarSuperficieDeBarrido(recorridoControl,100,2,nivelControl,100,2);
+                //var recorrido = bezierCompleto(recorridoControl,100,2);
+                // var nivel = bezierCompleto(nivelControl,100,2);
+                var recorrido = generarRecta(2)
+                var nivel = generarArcoCircunferencia(1,100);
+                var buffers = generarSuperficieDeBarrido(nivel,recorrido);
 
-                console.log(buffers.bufferPuntos);
-                console.log(buffers.bufferNormales);
-                console.log(buffers.bufferIndices);
+                //console.log(buffers.bufferPuntos);
+                //console.log(buffers.bufferNormales);
+                //console.log(buffers.bufferIndices);
 
                 sBVerticeBuffer = gl.createBuffer();
                 gl.bindBuffer(gl.ARRAY_BUFFER, sBVerticeBuffer);
@@ -805,11 +1084,161 @@
                 sBIndexBuffer.number_vertex_point = buffers.bufferIndices.length;
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sBIndexBuffer);
                 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(buffers.bufferIndices), gl.STATIC_DRAW);  
-
-                //console.log(sBIndexBuffer.number_vertex_point);
+                
+                //var recorrido = bezierCompleto(recorridoControl,100,2);
+                //var nivel = bezierCompleto(nivelControl,100,2);
+                buffersSupBarrido = superficieBarridoCompleta(nivel,recorrido);
 
             }
+
+            //function gererarEsfera(radio,cantidadFilas,cantidadColumas)
+            class Objeto3D
+            {
+                // atributos privados
+                constructor(vertexBuffer,normalBuffer,uVBuffer,indexBuffer,matrizModelado,matrizNormal,posicion,rotacionEje,rotacionAngulo,escala,color,hijos)
+                {
+                    //buffers
+                    this.vertexBuffer = null;
+                    this.normalBuffer = null;
+                    this.uVBuffer = null;
+                    this.indexBuffer = null;
+                    //matricex
+                    this.matrizModelado = mat4.create();
+                    this.matrizNormal = mat4.create();
+                    // parametros
+                    this.posicion =vec3.create();
+                    this.rotacionEje = vec3.create();
+                    this.rotacionAngulo = 0;
+                    this.escala = vec3.fromValues(1,1,1);
+                    this.color = vec3.create();
+                    // hijos
+                    this.hijos = [];
+                } 
+                // método privado, usa posición, rotación y escala
+                actualizarMatrizModelado()
+                {
+                    mat4.identity(this.matrizModelado);
+                    mat4.translate(this.matrizModelado,this.matrizModelado,this.posicion);
+                    mat4.rotate(this.matrizModelado,this.matrizModelado,this.rotacionAngulo,this.rotacionEje);
+                    mat4.scale(this.matrizModelado,this.matrizModelado,this.escala);
+                    //console.log(this.matrizModelado);
+                }
+                actualizarMatrizNormal(matrizVista,matrizM)
+                {
+                    mat4.multiply(this.matrizNormal,matrizVista,matrizM);
+                    mat4.invert(this.matrizNormal,this.matrizNormal);
+                    mat4.transpose(this.matrizNormal,this.matrizNormal);
+                }
+                // métodos públicos
+                dibujar (matrizVista, matrizPadre = null)
+                {
+                    var m = mat4.create();
+                    this.actualizarMatrizModelado();
+                    
+                    // concatenamos las transformaciones padre/hijo
+                    if(matrizPadre)
+                        mat4.multiply(m, matrizPadre, this.matrizModelado);
+                    else
+                        mat4.copy(m, this.matrizModelado)
+
+                    this.actualizarMatrizNormal(matrizVista, m);
+
+                    if(this.vertexBuffer && this.indexBuffer)
+                    {
+                    // setear matrices modelado y normales
+                    var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
+                    var normalMatrixUniform  = gl.getUniformLocation(glProgram, "normalMatrix");
+
+                    gl.uniformMatrix4fv(modelMatrixUniform, false, m);
+                    gl.uniformMatrix4fv(normalMatrixUniform, false, this.matrizNormal);
+
+                    //setear buffers    
+                    vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
+                    gl.enableVertexAttribArray(vertexPositionAttribute);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+                    gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                    vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
+                    gl.enableVertexAttribArray(vertexNormalAttribute);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+                    gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+                    gl.drawElements( gl.TRIANGLE_STRIP, this.indexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
+                    }
+
+                    for(var i=0;i< this.hijos.length;i++)
+                    {
+                        this.hijos[i].dibujar(matrizVista, m);
+                    } 
+                }
+                setGeometria (vertexBuffer,normalBuffer,uVBuffer,indexBuffer)
+                {
+                    this.vertexBuffer = vertexBuffer;
+                    this.normalBuffer = normalBuffer;
+                    this.uVBuffer = uVBuffer;
+                    this.indexBuffer = indexBuffer;
+                }
+                agregarHijo (h) 
+                {
+                    this.hijos.push(h);
+                }
+                quitarHijo (h) 
+                {
+                    var indice = this.hijos.indexOf(h);
+                    if (indice != -1)
+                    {
+                        this.hijos = this.hijos.splice(indice,1);
+                    }
+                }
+                setPosicion (x,y,z) 
+                {
+                    vec3.set(this.posicion,x,y,z);
+                }
+                setRotacion (x,y,z,alfa) 
+                {
+                    vec3.set(this.rotacionEje,x,y,z);
+                    this.rotacionAngulo = alfa;
+                }
+                setColor(r,g,b)
+                {
+
+                }
+                setEscala (x,y,z) 
+                {
+                    vec3.set(this.escala,x,y,z);
+                }
+            }
             
+            function inicializarObjetos()
+            {
+                var recorrido1 = generarRecta(1);
+                var nivel1 = generarArcoCircunferencia(0.2,100);
+                var buffers1 = superficieBarridoCompleta(nivel1,recorrido1);
+
+                var recorrido2 = generarArcoCircunferencia(0,100,180);
+                var nivel2= generarArcoCircunferencia(1,100);
+                var buffers2 = superficieBarridoCompleta(nivel2,recorrido2);
+
+                objetos3D = new Objeto3D();
+                objetos3D.setGeometria(buffers2.supBarridoVerticeBuffer,buffers2.supBarridoNormalBuffer,null,buffers2.supBarridoIndexBuffer);                  
+
+                var esfera = new Objeto3D();
+                esfera.setGeometria(buffers1.supBarridoVerticeBuffer,buffers1.supBarridoNormalBuffer,null,buffers1.supBarridoIndexBuffer);
+                esfera.setPosicion(-2.0,0.0,0.0);
+
+                objetos3D.agregarHijo(esfera);
+
+                                
+            }
+
+            /*
+            *
+            *
+            * 
+            * 
+            * 
+            */
             function setupVertexShaderMatrix(){
                 var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
                 var viewMatrixUniform  = gl.getUniformLocation(glProgram, "viewMatrix");
@@ -820,11 +1249,23 @@
                 gl.uniformMatrix4fv(viewMatrixUniform, false, viewMatrix);
                 gl.uniformMatrix4fv(projMatrixUniform, false, projMatrix);
                 gl.uniformMatrix4fv(normalMatrixUniform, false, normalMatrix);
-            }                  
+            } 
             
-            function drawScene(){
+            function setupVertexShaderMatrix2(){
+                //var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
+                var viewMatrixUniform  = gl.getUniformLocation(glProgram, "viewMatrix");
+                var projMatrixUniform  = gl.getUniformLocation(glProgram, "projMatrix");
+                //var normalMatrixUniform  = gl.getUniformLocation(glProgram, "normalMatrix");
+
+                //gl.uniformMatrix4fv(modelMatrixUniform, false, modelMatrix);
+                gl.uniformMatrix4fv(viewMatrixUniform, false, viewMatrix);
+                gl.uniformMatrix4fv(projMatrixUniform, false, projMatrix);
+                //gl.uniformMatrix4fv(normalMatrixUniform, false, normalMatrix);
+            }       
+            
+            function drawScene()
+            {
                 setupVertexShaderMatrix();
-                
                 /*
                 vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
                 gl.enableVertexAttribArray(vertexPositionAttribute);
@@ -839,6 +1280,7 @@
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bezierIndexBuffer);
                 gl.drawElements( gl.LINE_STRIP, bezierIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
                 */
+
                 /*
                 vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
                 gl.enableVertexAttribArray(vertexPositionAttribute);
@@ -853,7 +1295,8 @@
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, trianglesIndexBuffer);
                 gl.drawElements( gl.TRIANGLE_STRIP, trianglesIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
                 */
-                
+
+                /*
                 vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
                 gl.enableVertexAttribArray(vertexPositionAttribute);
                 gl.bindBuffer(gl.ARRAY_BUFFER, sBVerticeBuffer);
@@ -866,20 +1309,33 @@
 
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, sBIndexBuffer);
                 gl.drawElements( gl.TRIANGLE_STRIP, sBIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
+                */
+                
+                vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
+                gl.enableVertexAttribArray(vertexPositionAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffersSupBarrido.supBarridoVerticeBuffer);
+                gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
+                gl.enableVertexAttribArray(vertexNormalAttribute);
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffersSupBarrido.supBarridoNormalBuffer);
+                gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffersSupBarrido.supBarridoIndexBuffer);
+                gl.drawElements( gl.TRIANGLE_STRIP, buffersSupBarrido.supBarridoIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
                 
                 //gl.drawElements( gl.LINE_STRIP, sBIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
 
             }
-
- 
-
-
 
             function animate(){
                 
                 rotate_angle += 0.01;
                 mat4.identity(modelMatrix);
                 //mat4.rotate(modelMatrix,modelMatrix, rotate_angle, [1.0, 0.0, 1.0]);
+                //mat4.identity(viewMatrix);
+                //mat4.translate(viewMatrix,viewMatrix, [0.0, 0.0, -5.0]);
+                //mat4.rotate(viewMatrix,viewMatrix, rotate_angle, [-1.0, 0.0, 0.0]);
 
 
                 mat4.identity(normalMatrix);
@@ -892,8 +1348,21 @@
             function tick(){
 
                 requestAnimationFrame(tick);
-                drawScene();
-                animate();
+                setupVertexShaderMatrix2();
+
+                objetos3D.dibujar(viewMatrix);
+
+                rotate_angle += 0.01;
+                
+                objetos3D.setRotacion(0,-1,0,rotate_angle);
+
+                //mat4.identity(viewMatrix);
+                //mat4.translate(viewMatrix,viewMatrix, [0.0, 0.0, -5.0]);
+                //mat4.rotate(viewMatrix,viewMatrix, rotate_angle, [0.0, -1.0, 0.0]);
+
+
+                //drawScene();
+                //animate();
             }
 
             window.onload=initWebGL;
