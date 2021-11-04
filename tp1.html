@@ -4,7 +4,7 @@
         <title></title>        
         <style>
             body{ background-color: grey; }
-            canvas{ background-color: white; }
+            canvas{ background-color: rgb(23, 2, 73); }
 			textarea{ background-color: black; foreground-color: white;}
         </style>
     </head>
@@ -49,11 +49,14 @@
             varying vec3 vNormal;
             varying vec3 vPosWorld;
 
+            uniform vec3 colorDifuso;
+
             void main(void) {
 
                 vec3 lightVec=normalize(vec3(0.0,3.0,5.0)-vPosWorld);
-                vec3 diffColor=mix(vec3(0.7,0.7,0.7),vNormal,0.4);
-                vec3 color=dot(lightVec,vNormal)*diffColor+vec3(0.2,0.2,0.2);
+                //vec3 diffColor=mix(colorDifuso,vNormal,0.4);
+                //vec3 color=dot(lightVec,vNormal)*diffColor+vec3(0.2,0.2,0.2);
+                vec3 color=dot(lightVec,vNormal)*colorDifuso;+vec3(0.2,0.2,0.2);
 
                 //gl_FragColor = vec4(vNormal,1.0); 
                 gl_FragColor = vec4(color,1.0);
@@ -87,6 +90,7 @@
             var rotate_angle = -1.57078;
 
             var buffersSupBarrido;
+
             var objetos3D;
          
             function initWebGL(){
@@ -105,7 +109,6 @@
                     setupWebGL();
                     initShaders();
                     setupBuffers();
-                    probarBezier();
                     probarSuperficieDeBarrido();
                     setupVertexShaderMatrix();
                     inicializarObjetos();
@@ -439,6 +442,46 @@
 
             }
 
+            function bezier2D(puntosDeControl, cantidadPuntosFinal, grado)
+            {
+
+                var paso = 1.0/(cantidadPuntosFinal-1);
+                var puntoBezier
+                
+                var posicion = []
+                var tangente = [];
+                var normal = [];
+                var binormal = [];
+
+                var tangenteActual;
+                var binormalActual;
+                var normalActural = vec3.create();
+
+                for (var i = 0; i<cantidadPuntosFinal; i++)
+                {
+                    puntoBezier = bezierRecursivo(puntosDeControl, i*paso, grado);
+                    posicion.push(puntoBezier.puntosNuevos[0],puntoBezier.puntosNuevos[1],puntoBezier.puntosNuevos[2]);
+                    tangenteActual = puntoBezier.vectorTangente;
+
+                    tangente.push(tangenteActual[0],tangenteActual[1],tangenteActual[2]);
+
+                    binormalActual = [0,0,-1];
+                    binormal.push(binormalActual[0],binormalActual[1],binormalActual[2]);
+
+                    vec3.cross(normalActural,tangenteActual,binormalActual);
+                    vec3.normalize(normalActural,normalActural)
+                    normal.push(normalActural[0],normalActural[1],normalActural[2]);
+                }
+
+                return{
+                    posicion,
+                    tangente,
+                    normal,
+                    binormal
+                };
+            }
+            
+
             function bezierCompleto(puntosControl,cantidadPuntosFinalTotal, grado)
             {
                 var cantidadCurvas = Math.floor(puntosControl.length/(3*(grado+1)));
@@ -473,82 +516,37 @@
 
             }
 
-            var bezierVerticeBuffer = null;
-            var bezierNormalBuffer = null;
-            var bezierIndexBuffer = null;
-
-            function probarBezier()
+            function bezierCompleto2D(puntosControl,cantidadPuntosFinalTotal, grado)
             {
-                /*
-                const vectorVertices = 
-                [
-                    2.0,0.0,0.0,
-                    2.0,2.0,0.0,
-                    0.0,2.0,0.0,
+                var cantidadCurvas = Math.floor(puntosControl.length/(3*(grado+1)));
+                var cantidadPuntosPorCurva = Math.ceil(cantidadPuntosFinalTotal/cantidadCurvas);
+                var cantidadPuntosFinal = cantidadPuntosPorCurva*cantidadCurvas;
 
-                    0.0,2.0,0.0,
-                    -2.0,2.0,0.0,
-                    -2.0,0.0,0.0,
+                var posicion = [];
+                var tangente = [];
+                var normal = [];
+                var binormal = [];
 
-                    -2.0,0.0,0.0,
-                    -2.0,-2.0,0.0,
-                    0.0,-2.0,0.0,
+                var puntosControlUsados;
+                var bezier2;
 
-                    0.0,-2.0,0.0,
-                    2.0,-2.0,0.0,
-                    2.0,0.0,0.0,
-                ];
-                */
-                /*
-                const vectorVertices = 
-                [
-                    -1.0,0.0,0.0,
-                    -1.0,0.0,-1.0,
-                    0.0,0.0,-1.0,
-
-                    0.0,0.0,-1.0,
-                    1.0,0.0,-1.0,
-                    1.0,0.0,0.0,
-                ];
-                */
-                const vectorVertices = 
-                [
-                    -1.0,0.0,0.0,
-                    -1.0,-1.0,0.0,
-                    0.0,-1.0,0.0,
-
-                    0.0,-1.0,0.0,
-                    1.0,-1.0,0.0,
-                    1.0,0.0,0.0,
-                ];
-                
-
-                var puntosBezier = bezierCompleto(vectorVertices,100, 2);
-                var pos = puntosBezier.posicion;
-                var norm = puntosBezier.normal;
-                var puntos = puntosBezier.cantidadPuntosFinal;
-
-                var indice = [];
-
-                for (let index = 0; index < puntos; index++) 
+                for(var i = 0; i<cantidadCurvas; i++)
                 {
-                    indice.push(index);                    
+                    puntosControlUsados = puntosControl.slice(3*(grado+1)*i,3*(grado+1)*(i+1));
+                    bezier2 = bezier2D(puntosControlUsados, cantidadPuntosPorCurva, grado);
+                    posicion = posicion.concat(bezier2.posicion);
+                    tangente = tangente.concat(bezier2.tangente);
+                    normal = normal.concat(bezier2.normal);
+                    binormal = binormal.concat(bezier2.binormal);
                 }
 
-                bezierVerticeBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, bezierVerticeBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);    
-            
-
-                bezierNormalBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, bezierNormalBuffer);
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(norm), gl.STATIC_DRAW);
-                
-                
-                bezierIndexBuffer = gl.createBuffer();
-                bezierIndexBuffer.number_vertex_point = indice.length;
-                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bezierIndexBuffer);
-                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indice), gl.STATIC_DRAW);  
+                return{
+                    posicion,
+                    tangente,
+                    normal,
+                    binormal,
+                    cantidadPuntosFinal
+                };
 
             }
 
@@ -601,7 +599,7 @@
                 a.push(1);
 
                 var matrizModelado = mat4.fromValues(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15]);
-                mat4.multiply(matrizModelado, matrizRotoEscalado, matrizModelado);
+                mat4.multiply(matrizModelado, matrizModelado, matrizRotoEscalado);
                 var matrizNormal = mat4.create();
                 
                 mat4.invert(matrizNormal,matrizModelado);
@@ -621,7 +619,7 @@
                 mat4.identity(matrixRotoEscalado);
                 if (angulosRotacion != null)
                 {
-                    vectorRotacion = vec3.fromValues(vectoresRotacion[3*paso],vectoresRotacion[3*paso+1],vectoresRotacion[3*paso+2])
+                    vectorRotacion = vec3.fromValues(vectoresRotacion[0],vectoresRotacion[1],vectoresRotacion[2])
                     mat4.rotate(matrixRotoEscalado,matrixRotoEscalado,angulosRotacion[paso],vectorRotacion);
                 }
                 if (escalados != null)
@@ -639,6 +637,7 @@
                 var bufferUV = [];
                 var punto = vec3.create();
                 var normal = vec4.create();
+                var normalAux = vec3.create();
                 for(var i = 0; i<nivel.cantidadPuntosFinal; i++)
                 {   
                     vec3.set(punto,nivel.posicion[3*i],nivel.posicion[3*i+1],nivel.posicion[3*i+2]);
@@ -647,9 +646,10 @@
                     vec4.transformMat4(normal,normal,matrizNormal);
                     //invierto signo normal
                     vec4.scale(normal,normal,-1);
-
+                    vec3.set(normalAux,normal[0],normal[1],normal[2]);
+                    vec3.normalize(normalAux,normalAux);
                     bufferPuntos.push(punto[0],punto[1],punto[2]);
-                    bufferNormales.push(normal[0],normal[1],normal[2]);
+                    bufferNormales.push(normalAux[0],normalAux[1],normalAux[2]);
                     bufferUV.push(bufferU[i],valorV);
                 }
                 return{
@@ -770,10 +770,12 @@
                 var bufferU = calcularValorBufferUVSuperficie(nivel.posicion,nivel.cantidadPuntosFinal);
                 var bufferV = calcularValorBufferUVSuperficie(recorrido.posicion,recorrido.cantidadPuntosFinal);
 
+                var vectorTangente = [nivel.binormal[0],nivel.binormal[1],nivel.binormal[2]];
+                //var vectorTangente = [nivel.normal[0],nivel.normal[1],nivel.normal[2]];
                 for (var i = 0; i < recorrido.cantidadPuntosFinal; i++) 
                 
                 {
-                    matrizRotoEscalado = obtnerMatrixRotoEscalado(escalados, angulosRotacion, recorrido.tangente, i);
+                    matrizRotoEscalado = obtnerMatrixRotoEscalado(escalados, angulosRotacion, vectorTangente, i);
                     matrices = obtenerMatricesTransformacion(recorrido, matrizRotoEscalado, i);    
                     nivelNuevo = obtenerTransformacionNivel(nivel, matrices.matrizModelado, matrices.matrizNormal, bufferU, bufferV[i]);
                     bufferPuntos = bufferPuntos.concat(nivelNuevo.bufferPuntos);
@@ -892,28 +894,221 @@
                 var supBarridoNormalBuffer = gl.createBuffer();
                 gl.bindBuffer(gl.ARRAY_BUFFER, supBarridoNormalBuffer);
                 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(bufferNormal), gl.STATIC_DRAW);
-                
-                
+
+                var supBarridoUVBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, supBarridoUVBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(bufferUV), gl.STATIC_DRAW);
+ 
                 var supBarridoIndexBuffer = gl.createBuffer();
                 supBarridoIndexBuffer.number_vertex_point = bufferIndice.length;
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, supBarridoIndexBuffer);
                 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(bufferIndice), gl.STATIC_DRAW); 
 
-
                 return {
                     supBarridoVerticeBuffer,
                     supBarridoNormalBuffer,
+                    supBarridoUVBuffer,
                     supBarridoIndexBuffer
                 };
             }
 
-            function generarRecta(longitud)
+            function superficieRevolucionCompleta(nivel,recorrido,invertirNormalTapas = false,tapaInicial = true, tapaFinal = true,escalados = null,angulosRotacion = null)
             {
-                var posicion = [-longitud/2,0.0,0.0,longitud/2,0.0,0.0];
-                var tangente = [1.0,0.0,0.0,1.0,0.0,0.0];
-                var normal = [0.0,0.0,1.0,0.0,0.0,1.0];
-                var binormal = [0.0,1.0,0.0,0.0,1.0,0.0];
-                var cantidadPuntosFinal = 2;
+                
+                if(tapaInicial)
+                {
+                    nivel.posicion.splice(0,0,nivel.posicion[0],nivel.posicion[1],nivel.posicion[2],nivel.posicion[0],nivel.posicion[1],nivel.posicion[2]);
+                    nivel.tangente.splice(0,0,nivel.tangente[0],nivel.tangente[1],nivel.tangente[2],nivel.tangente[0],nivel.tangente[1],nivel.tangente[2]);
+                    nivel.normal.splice(0,0,nivel.normal[0],nivel.normal[1],nivel.normal[2],nivel.normal[0],nivel.normal[1],nivel.normal[2]);
+                    nivel.binormal.splice(0,0,nivel.binormal[0],nivel.binormal[1],nivel.binormal[2],nivel.binormal[0],nivel.binormal[1],nivel.binormal[2]);
+                    nivel.cantidadPuntosFinal = nivel.cantidadPuntosFinal + 2;
+                }
+
+                if(tapaFinal)
+                {
+                    var puntos = 3*nivel.cantidadPuntosFinal;
+                    nivel.posicion.push(nivel.posicion[puntos-3],nivel.posicion[puntos-2],nivel.posicion[puntos-1]);
+                    nivel.posicion.push(nivel.posicion[puntos-3],nivel.posicion[puntos-2],nivel.posicion[puntos-1]);
+                    nivel.tangente.push(nivel.tangente[puntos-3],nivel.tangente[puntos-2],nivel.tangente[puntos-1]);
+                    nivel.tangente.push(nivel.tangente[puntos-3],nivel.tangente[puntos-2],nivel.tangente[puntos-1]);
+                    nivel.normal.push(nivel.normal[puntos-3],nivel.normal[puntos-2],nivel.normal[puntos-1]);
+                    nivel.normal.push(nivel.normal[puntos-3],nivel.normal[puntos-2],nivel.normal[puntos-1]);
+                    nivel.binormal.push(nivel.binormal[puntos-3],nivel.binormal[puntos-2],nivel.binormal[puntos-1]);
+                    nivel.binormal.push(nivel.binormal[puntos-3],nivel.binormal[puntos-2],nivel.binormal[puntos-1]);
+                    nivel.cantidadPuntosFinal = nivel.cantidadPuntosFinal + 2;
+                }                
+
+                var buffersSuperficie = generarSuperficieDeBarrido(nivel, recorrido, escalados, angulosRotacion);
+                var bufferUVAux = calcularValorBufferUVTapas(recorrido.posicion, recorrido.cantidadPuntosFinal);
+
+                var posicion;
+                var tapa = [];
+                var normalTapa = [];
+                var puntosTapa;
+
+                var centroX;
+                var centroY;
+                var centroZ;
+
+                
+                if(tapaInicial)
+                {
+                    posicion = 6;
+                    puntosTapa = recorrido.cantidadPuntosFinal;
+                    centroX = 0;
+                    centroY = 0;
+                    centroZ = 0;
+                    tapa = [];
+                    for(var i=0; i< puntosTapa; i++)
+                    {
+                        tapa.push(buffersSuperficie.bufferPuntos[posicion],buffersSuperficie.bufferPuntos[posicion+1],buffersSuperficie.bufferPuntos[posicion+2]);
+                        posicion += 3*nivel.cantidadPuntosFinal;
+                    }
+                    //console.log(tapa);
+                    normalTapa = vec3.fromValues(recorrido.binormal[0],recorrido.binormal[1],recorrido.binormal[2]);
+                    if(invertirNormalTapas)
+                    {
+                        vec3.scale(normalTapa,normalTapa,-1);
+                    }
+                    for(var i=0; i< puntosTapa; i++)
+                    {
+                        centroX += tapa[3*i];
+                        centroY += tapa[3*i+1];
+                        centroZ += tapa[3*i+2];
+
+                    }
+                    centroX = centroX/puntosTapa;
+                    centroY = centroY/puntosTapa;
+                    centroZ = centroZ/puntosTapa;     
+                    posicion = 0;
+                    for(var i=0; i< puntosTapa; i++)
+                    {
+                        buffersSuperficie.bufferPuntos[3*posicion] = centroX;
+                        buffersSuperficie.bufferPuntos[3*posicion+1] = centroY;
+                        buffersSuperficie.bufferPuntos[3*posicion+2] = centroZ;
+                        buffersSuperficie.bufferPuntos[3*posicion+3] = tapa[3*i];
+                        buffersSuperficie.bufferPuntos[3*posicion+4] = tapa[3*i+1];
+                        buffersSuperficie.bufferPuntos[3*posicion+5] = tapa[3*i+2];
+
+                        buffersSuperficie.bufferNormales[3*posicion] = normalTapa[0];
+                        buffersSuperficie.bufferNormales[3*posicion+1] = normalTapa[1];
+                        buffersSuperficie.bufferNormales[3*posicion+2] = normalTapa[2];
+                        buffersSuperficie.bufferNormales[3*posicion+3] = normalTapa[0];
+                        buffersSuperficie.bufferNormales[3*posicion+4] = normalTapa[1];
+                        buffersSuperficie.bufferNormales[3*posicion+5] = normalTapa[2];
+
+                        buffersSuperficie.bufferUV[2*posicion] = bufferUVAux.bufferUVCentro[2*i];
+                        buffersSuperficie.bufferUV[2*posicion+1] = bufferUVAux.bufferUVCentro[2*i+1];
+                        buffersSuperficie.bufferUV[2*posicion+2] = bufferUVAux.bufferUVBorde[2*i];
+                        buffersSuperficie.bufferUV[2*posicion+3] = bufferUVAux.bufferUVBorde[2*i+1];
+                        posicion += nivel.cantidadPuntosFinal;
+                    }
+
+                    
+                }
+
+                if(tapaFinal)
+                {
+                    posicion = 3*nivel.cantidadPuntosFinal-9;
+                    puntosTapa = recorrido.cantidadPuntosFinal;
+                    centroX = 0;
+                    centroY = 0;
+                    centroZ = 0;
+                    tapa = [];
+                    for(var i=0; i< puntosTapa; i++)
+                    {
+                        tapa.push(buffersSuperficie.bufferPuntos[posicion],buffersSuperficie.bufferPuntos[posicion+1],buffersSuperficie.bufferPuntos[posicion+2]);
+                        posicion += 3*nivel.cantidadPuntosFinal;
+                    }
+                    normalTapa = vec3.fromValues(-1*recorrido.binormal[0],-1*recorrido.binormal[1],-1*recorrido.binormal[2]);
+                    if(invertirNormalTapas)
+                    {
+                        vec3.scale(normalTapa,normalTapa,-1);
+                    }
+                    for(var i=0; i< puntosTapa; i++)
+                    {
+                        centroX += tapa[3*i];
+                        centroY += tapa[3*i+1];
+                        centroZ += tapa[3*i+2];
+                    }
+                    centroX = centroX/puntosTapa;
+                    centroY = centroY/puntosTapa;
+                    centroZ = centroZ/puntosTapa;     
+                    posicion = nivel.cantidadPuntosFinal-2;
+                    for(var i=0; i< puntosTapa; i++)
+                    {
+                        buffersSuperficie.bufferPuntos[3*posicion] = tapa[3*i];
+                        buffersSuperficie.bufferPuntos[3*posicion+1] = tapa[3*i+1];
+                        buffersSuperficie.bufferPuntos[3*posicion+2] = tapa[3*i+2];
+                        buffersSuperficie.bufferPuntos[3*posicion+3] = centroX;
+                        buffersSuperficie.bufferPuntos[3*posicion+4] = centroY;
+                        buffersSuperficie.bufferPuntos[3*posicion+5] = centroZ;
+
+                        buffersSuperficie.bufferNormales[3*posicion] = normalTapa[0];
+                        buffersSuperficie.bufferNormales[3*posicion+1] = normalTapa[1];
+                        buffersSuperficie.bufferNormales[3*posicion+2] = normalTapa[2];
+                        buffersSuperficie.bufferNormales[3*posicion+3] = normalTapa[0];
+                        buffersSuperficie.bufferNormales[3*posicion+4] = normalTapa[1];
+                        buffersSuperficie.bufferNormales[3*posicion+5] = normalTapa[2];
+
+                        buffersSuperficie.bufferUV[posicion] = bufferUVAux.bufferUVBorde[2*i];
+                        buffersSuperficie.bufferUV[posicion+1] = bufferUVAux.bufferUVBorde[2*i+1];
+                        buffersSuperficie.bufferUV[posicion+2] = bufferUVAux.bufferUVCentro[2*i];
+                        buffersSuperficie.bufferUV[posicion+3] = bufferUVAux.bufferUVCentro[2*i+1];
+                
+                        posicion += nivel.cantidadPuntosFinal;
+                    }
+                }
+                
+
+                //console.log(nivel.cantidadPuntosFinal);
+                var bufferIndice = obtenerIndexBuffer(recorrido.cantidadPuntosFinal,nivel.cantidadPuntosFinal);
+                //console.log(bufferIndice);
+
+                var supBarridoVerticeBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, supBarridoVerticeBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffersSuperficie.bufferPuntos), gl.STATIC_DRAW);    
+            
+
+                var supBarridoNormalBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, supBarridoNormalBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffersSuperficie.bufferNormales), gl.STATIC_DRAW);
+
+                var supBarridoUVBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, supBarridoUVBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(buffersSuperficie.bufferUV), gl.STATIC_DRAW);
+ 
+                var supBarridoIndexBuffer = gl.createBuffer();
+                supBarridoIndexBuffer.number_vertex_point = bufferIndice.length;
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, supBarridoIndexBuffer);
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(bufferIndice), gl.STATIC_DRAW); 
+
+                return {
+                    supBarridoVerticeBuffer,
+                    supBarridoNormalBuffer,
+                    supBarridoUVBuffer,
+                    supBarridoIndexBuffer
+                };
+            }
+
+
+            function generarRecta(longitud, cantidadPuntos = 2)
+            {
+                var paso = longitud/(cantidadPuntos-1);
+                var inicial = -longitud/2;
+                var posicion = [];
+                var tangente = [];
+                var normal = [];
+                var binormal = [];
+                var cantidadPuntosFinal = cantidadPuntos;
+                for(var i=0; i<cantidadPuntos; i++)
+                {
+                    posicion.push((inicial+i*paso),0.0,0.0);
+                    tangente.push(1.0,0.0,0.0);
+                    normal.push(0.0,1.0,0.0);
+                    binormal.push(0.0,0.0,-1.0);
+                }
+
                 return{
                     posicion,
                     tangente,
@@ -922,7 +1117,41 @@
                     cantidadPuntosFinal
                 };
             }
-            
+
+            function generarRecta2D(x1,y1,x2,y2,cantPuntos = 2)
+            {
+                var tangenteAux = vec3.fromValues(x2-x1,y2-y1,0);
+                vec3.normalize(tangenteAux,tangenteAux);
+                var binormalAux = vec3.fromValues(0,0,-1);
+                var normalAux = vec3.create();
+                vec3.cross(normalAux,tangenteAux,binormalAux);
+
+                var pasoX = x2-x1/(cantPuntos-1);
+                var pasoY = y2-y1/(cantPuntos-1);
+
+
+                var posicion = [];
+                var tangente = [];
+                var normal = [];
+                var binormal = [];
+                var cantidadPuntosFinal = cantPuntos;
+                for(var i=0; i<cantPuntos; i++)
+                {
+                    posicion.push((x1+i*pasoX),(y1+i*pasoY),0.0);
+                    tangente.push(tangenteAux[0],tangenteAux[1],tangenteAux[2]);
+                    normal.push(normalAux[0],normalAux[1],normalAux[2]);
+                    binormal.push(binormalAux[0],binormalAux[1],binormalAux[2]);
+                }
+
+                return{
+                    posicion,
+                    tangente,
+                    normal,
+                    binormal,
+                    cantidadPuntosFinal
+                };
+            }
+
             function generarRectangulo(base, altura)
             {
                 var posicion = 
@@ -979,10 +1208,11 @@
                 };
             }
 
-            function generarArcoCircunferencia(radio,cantidadPuntos,anguloEnGrados=360)
+            function generarArcoCircunferencia(radio,cantidadPuntos,anguloEnGrados=360,anguloInicialEnGrados=0)
             {
-                var anguloMax = anguloEnGrados*Math.PI/180;
-                var pasoAngulo = anguloMax/(cantidadPuntos-1);
+                var anguloInicial = anguloInicialEnGrados*Math.PI/180
+                var anguloMax = (anguloEnGrados+anguloInicialEnGrados)*Math.PI/180;
+                var pasoAngulo = (anguloMax-anguloInicial)/(cantidadPuntos-1);
                 var posicion = [];
                 var tangente = [];
                 var normal = [];
@@ -990,16 +1220,16 @@
                 var cantidadPuntosFinal = cantidadPuntos;
                 var coseno;
                 var seno;
-                var angulo;
+                var angulo = anguloInicial;
                 for(var i=0; i<cantidadPuntos;i++)
                 {   
-                    angulo = pasoAngulo*i;
                     coseno = Math.cos(angulo);
                     seno = Math.sin(angulo);
                     posicion.push(radio*coseno,radio*seno,0.0);
                     tangente.push(-seno,coseno,0.0);
                     normal.push(-coseno,-seno,0.0);
                     binormal.push(0.0,0.0,-1.0);
+                    angulo += pasoAngulo;
                 }
                 return{
                     posicion,
@@ -1009,7 +1239,494 @@
                     cantidadPuntosFinal
                 };
             }
+        
+            function generarCirculoBezier(radio,cantidadPuntos)
+            {
+                const distancia = radio*4*(Math.sqrt(2)-1)/3;
+                const puntosControl = 
+                [
+                    radio,0.0,0.0,
+                    radio,distancia,0.0,
+                    distancia,radio,0.0,
+                    0.0,radio,0.0,
+
+                    0.0,radio,0.0,
+                    -distancia,radio,0.0,
+                    -radio,distancia,0.0,
+                    -radio,0.0,0.0,
+
+                    -radio,0.0,0.0,
+                    -radio,-distancia,0.0,
+                    -distancia,-radio,0.0,
+                    0.0,-radio,0.0,
+
+                    0.0,-radio,0.0,
+                    distancia,-radio,0.0,
+                    radio,-distancia,0.0,
+                    radio,0.0,0.0                  
+                ];
+
+                var buffers = bezierCompleto(puntosControl,cantidadPuntos, 3);
+
+                var posicion = buffers.posicion;
+                var tangente = buffers.tangente;
+                var normal = buffers.normal;
+                var binormal = buffers.binormal;
+                var cantidadPuntosFinal = buffers.cantidadPuntosFinal;
+
+                return{
+                    posicion,
+                    tangente,
+                    normal,
+                    binormal,
+                    cantidadPuntosFinal
+                };
+            }
             
+            function generarPrisma(ancho,alto,profundo,cantPuntos=16)
+            {
+                var nivel = generarRectangulo(ancho,alto);
+                var cantPuntosRecta = Math.ceil(cantPuntos/nivel.cantidadPuntosFinal);
+                var recorrido = generarRecta(profundo, cantPuntosRecta);
+                var buffers = superficieBarridoCompleta(nivel,recorrido);
+                var supBarridoVerticeBuffer = buffers.supBarridoVerticeBuffer;
+                var supBarridoNormalBuffer = buffers.supBarridoNormalBuffer;
+                var supBarridoUVBuffer = buffers.supBarridoUVBuffer;
+                var supBarridoIndexBuffer = buffers.supBarridoIndexBuffer;
+
+                return {
+                    supBarridoVerticeBuffer,
+                    supBarridoNormalBuffer,
+                    supBarridoUVBuffer,
+                    supBarridoIndexBuffer
+                };
+            }
+
+            function generarCilindro(radio,profundo,cantpuntosCirculo=20,cantPuntosRecta=2)
+            {   
+                var nivel = generarArcoCircunferencia(radio,cantpuntosCirculo);
+                var recorrido = generarRecta(profundo, cantPuntosRecta);
+                var buffers = superficieBarridoCompleta(nivel,recorrido);
+                var supBarridoVerticeBuffer = buffers.supBarridoVerticeBuffer;
+                var supBarridoNormalBuffer = buffers.supBarridoNormalBuffer;
+                var supBarridoUVBuffer = buffers.supBarridoUVBuffer;
+                var supBarridoIndexBuffer = buffers.supBarridoIndexBuffer;
+
+                return {
+                    supBarridoVerticeBuffer,
+                    supBarridoNormalBuffer,
+                    supBarridoUVBuffer,
+                    supBarridoIndexBuffer
+                };
+            }
+
+            // para generar el anillo
+
+            function generarColumaSoporte(bufferBarraLatera,bufferBarraCruzada, longitud, ancho,longitudBarraCruzada,color)
+            {
+                var columaSoporte = new Objeto3D();
+                var objetoAuxiliar = new Objeto3D();
+                objetoAuxiliar.setGeometria(bufferBarraLatera);
+                objetoAuxiliar.setPosicion(longitud/2,ancho/2,0);
+                objetoAuxiliar.setColor(color[0],color[1],color[2]);
+                columaSoporte.agregarHijo(objetoAuxiliar);
+                objetoAuxiliar = new Objeto3D();
+                objetoAuxiliar.setGeometria(bufferBarraLatera);
+                objetoAuxiliar.setPosicion(longitud/2,-ancho/2,0);
+                objetoAuxiliar.setColor(color[0],color[1],color[2]);
+                columaSoporte.agregarHijo(objetoAuxiliar);
+                var rotacionBarraCruzada = Math.asin(ancho/longitudBarraCruzada);
+                var alturaBarraCruzada = Math.cos(rotacionBarraCruzada)*longitudBarraCruzada;
+                var cantidadBarrasCruzadas = Math.floor(longitud/alturaBarraCruzada);
+                var posicion = (longitud-cantidadBarrasCruzadas*alturaBarraCruzada)/2+alturaBarraCruzada/2;
+                for(var i = 0; i < cantidadBarrasCruzadas; i++)
+                {
+                    objetoAuxiliar = new Objeto3D();
+                    objetoAuxiliar.setGeometria(bufferBarraCruzada);
+                    objetoAuxiliar.setPosicion(posicion,0,0);
+                    objetoAuxiliar.setRotacion(0,0,1,rotacionBarraCruzada);
+                    objetoAuxiliar.setColor(color[0],color[1],color[2]);
+                    columaSoporte.agregarHijo(objetoAuxiliar);
+                    rotacionBarraCruzada *= -1;
+                    posicion += alturaBarraCruzada;
+                }
+                return columaSoporte;
+
+            }
+
+            function generarModulos(ancho, alto, radioCurvatura, anguloArco, cantPuntosArco = 100, cantPuntosNivel = 24)
+            {
+                const min = Math.min(ancho,alto);
+                const factorBorde = 0.2
+                const distanciaEsquina = factorBorde*min;
+                const gradoBezier = 2;
+                const alto2 = alto/2-distanciaEsquina;
+                const ancho2 = ancho/2-distanciaEsquina;
+                const puntosControlNivel = [
+                    ancho/2,-alto2,0.0,
+                    ancho/2,0.0,0.0,
+                    ancho/2,alto2,0.0,
+
+                    ancho/2,alto2,0.0,
+                    ancho2+distanciaEsquina/2,alto2+distanciaEsquina/2,0.0,
+                    ancho2,alto/2,0.0,
+
+                    ancho2,alto/2,0.0,
+                    0.0,alto/2,0.0,
+                    -ancho2,alto/2,0.0,
+
+                    -ancho2,alto/2,0.0,
+                    -ancho2-distanciaEsquina/2,alto2+distanciaEsquina/2,0.0,
+                    -ancho/2,alto2,0.0,
+
+                    -ancho/2,alto2,0.0,
+                    -ancho/2,0.0,0.0,
+                    -ancho/2,-alto2,0.0,
+
+                    -ancho/2,-alto2,0.0,
+                    -ancho2-distanciaEsquina/2,-alto2-distanciaEsquina/2,0.0,
+                    -ancho2,-alto/2,0.0,
+
+                    -ancho2,-alto/2,0.0,
+                    0.0,-alto/2,0.0,
+                    ancho2,-alto/2,0.0,
+
+                    ancho2,-alto/2,0.0,
+                    ancho2+distanciaEsquina/2,-alto2-distanciaEsquina/2,0.0,
+                    ancho/2,-alto2,0.0
+                ];
+
+                var nivel = bezierCompleto2D(puntosControlNivel,cantPuntosNivel, gradoBezier);
+                var recorrido = generarArcoCircunferencia(radioCurvatura,cantPuntosArco,anguloArco,-anguloArco/2);
+
+                var supreficie = superficieBarridoCompleta(nivel,recorrido);
+                return supreficie;
+            }
+
+            function generarCentroAnillo(radio, ancho, color)
+            {
+                const anchoborde = 0.3*ancho;
+                const difRadio = anchoborde;
+                
+                const cantPuntosRecorrido = 6;
+                const cantPuntosCirculo = 100;
+                var objeto = new Objeto3D();
+
+                const radioMin = radio-difRadio;
+                const radioMedio = radio-difRadio/2;
+
+                var objetoAux = new Objeto3D();
+                var buffersAux = generarCilindro(radio,ancho,cantPuntosCirculo,cantPuntosRecorrido);
+                objetoAux.setGeometria(buffersAux);
+                objetoAux.setRotacion(0,1,0,Math.PI/2);
+                objetoAux.setColor(color[0],color[1],color[2]);
+                objeto.agregarHijo(objetoAux);
+                
+                const posTapas = (anchoborde + ancho)/2;
+
+                var recorrido = generarCirculoBezier(radioMedio,cantPuntosCirculo);
+                var nivel = generarRecta2D(difRadio/2,anchoborde/2,-difRadio/2,-anchoborde/2);
+            
+                buffersAux = superficieRevolucionCompleta(nivel,recorrido);
+                objetoAux = new Objeto3D();
+                objetoAux.setGeometria(buffersAux);
+                objetoAux.setPosicion(0,0,-posTapas);
+                objetoAux.setColor(color[0],color[1],color[2]);
+                objeto.agregarHijo(objetoAux);
+
+                buffersAux = superficieRevolucionCompleta(nivel,recorrido);
+                objetoAux = new Objeto3D();
+                objetoAux.setGeometria(buffersAux);
+                objetoAux.setPosicion(0,0,posTapas);
+                objetoAux.setRotacion(0,1,0,Math.PI);
+                objetoAux.setColor(color[0],color[1],color[2]);
+                objeto.agregarHijo(objetoAux);
+
+                
+                return objeto;
+            }
+
+            function generarAnillo()
+            {
+                var cantidadModulos = 5;
+
+                // centro del anillo
+                const factorTamanio = 0.25;
+
+                const radioInterno = factorTamanio*1.5;
+                const anchoCentro = factorTamanio*0.3;
+                const colorCentro = vec3.fromValues(0.5,0.8,0.0);
+
+                // vigas
+                const anchoLateral = factorTamanio*0.1;
+                const radioviga = factorTamanio*0.04;
+                const anchoViga = factorTamanio*0.3;
+                const colorVigas = vec3.fromValues(0.8,0.6,0.7);
+                const cantPuntosCruzado = 20;
+                const largoCrucado = factorTamanio*0.5;
+
+                // anillo externo 
+                const radio = factorTamanio*7.5;
+                const radioAnillo = factorTamanio*0.5;
+                const colorAnillo = vec3.fromValues(0.8,0.8,0.8);
+                const cantPuntosAnilloN = 100;
+                const cantPuntosAnilloR = 200;
+
+                // modulo 
+                const anchoModulo = factorTamanio*2.0;
+                const altoModulo = factorTamanio*1.1;
+                const colorModulo = vec3.fromValues(0.0,0.75,0.75);
+                
+                var objeto = new Objeto3D();
+
+                var hijo = generarCentroAnillo(radioInterno,anchoCentro,colorCentro);
+                //hijo.setRotacion(1,0,0,Math.PI/2);
+                objeto.agregarHijo(hijo);
+
+                var nivel = generarArcoCircunferencia(radioAnillo,cantPuntosAnilloN)
+                var recorrido = generarArcoCircunferencia(radio,cantPuntosAnilloR)
+                var supreficie = superficieBarridoCompleta(nivel,recorrido);
+                hijo = new Objeto3D();
+                hijo.setGeometria(supreficie);
+                hijo.setColor(colorAnillo[0],colorAnillo[1],colorAnillo[2]);
+                objeto.agregarHijo(hijo);
+
+                supreficie = generarPrisma(anchoLateral,anchoLateral,radio);
+                var supreficie2 = generarCilindro(radioviga,largoCrucado,cantPuntosCruzado);
+                
+                var supreficie3 = generarModulos(anchoModulo, altoModulo, radio, 360/(2*cantidadModulos));
+
+                var anguloInicial = 0;
+                var anguloPaso = Math.PI*2/cantidadModulos;
+
+                for(var i = 0; i < cantidadModulos; i++)
+                {
+                    hijo = generarColumaSoporte(supreficie,supreficie2,radio,anchoViga,largoCrucado,colorVigas);
+                    hijo.setRotacion(0,0,1,anguloInicial);
+                    objeto.agregarHijo(hijo);
+                    hijo = new Objeto3D();
+                    hijo.setGeometria(supreficie3);
+                    hijo.setColor(colorModulo[0],colorModulo[1],colorModulo[2]);
+                    hijo.setRotacion(0,0,1,anguloInicial);
+                    objeto.agregarHijo(hijo);
+                    anguloInicial += anguloPaso;
+                }
+
+
+                return objeto
+            }
+
+            // para generar los paneles solares
+
+            function generarParPanelSolar(buffercilindro,bufferpanel, largoPanel, largoCilindro, color)
+            {
+                var objeto = new Objeto3D();
+                var hijo = new Objeto3D();
+                hijo.setGeometria(buffercilindro);
+                hijo.setColor(color[0],color[1],color[2]);
+                objeto.agregarHijo(hijo);
+
+                hijo = new Objeto3D();
+                hijo.setGeometria(bufferpanel);
+                hijo.setColor(color[0],color[1],color[2]);
+                hijo.setPosicion(-(largoPanel+largoCilindro)/2,0.0,0.0);
+                objeto.agregarHijo(hijo);
+
+                hijo = new Objeto3D();
+                hijo.setGeometria(bufferpanel);
+                hijo.setColor(color[0],color[1],color[2]);
+                hijo.setPosicion((largoPanel+largoCilindro)/2,0.0,0.0);
+                objeto.agregarHijo(hijo);
+
+                return objeto;
+            }
+
+            var punteroPaneles;
+
+            function generarPanelesSolares()
+            {
+                const factorEscala = 0.6;
+
+                var cantidadFilasPaneles = 4;
+                punteroPaneles = [];
+
+                // panel 
+                const anchoPanel = factorEscala*0.6;
+                const altoPanel = factorEscala*0.1;
+                const profundidadPanel = factorEscala*2;
+
+                const radioBarra = factorEscala*0.04;
+                const largoBarra = factorEscala*0.5;
+
+                const colorPaneles = vec3.fromValues(0.2,0.2,0.8);
+
+                // barra
+                const largoOriginal = factorEscala*1.2;
+                const largoPanel = factorEscala*0.7;
+                const radioCentral = factorEscala*0.08;
+
+                const colorBarra = vec3.fromValues(0.8,0.6,0.7);
+
+                const centroPaneles = largoOriginal+largoPanel*cantidadFilasPaneles/2;
+
+                var objeto = new Objeto3D();
+                var hijo = new Objeto3D();
+                var superficie1 = generarCilindro(radioCentral,largoOriginal+largoPanel*cantidadFilasPaneles); 
+                hijo.setGeometria(superficie1);
+                hijo.setColor(colorBarra[0],colorBarra[1],colorBarra[2]);
+                hijo.setRotacion(0,0,1,Math.PI/2);
+                hijo.setPosicion(0.0,-(largoOriginal+largoPanel*cantidadFilasPaneles)/2,0.0);
+                objeto.agregarHijo(hijo);
+
+                var posInicial = largoOriginal+largoPanel/2;
+
+                superficie1 = generarPrisma(anchoPanel,altoPanel,profundidadPanel);
+                var superficie2 = generarCilindro(radioBarra,largoBarra);
+                for(var i = 0; i<cantidadFilasPaneles;i++)
+                {
+                    var hijo = generarParPanelSolar(superficie2,superficie1, profundidadPanel, largoBarra, colorPaneles);
+                    hijo.setPosicion(0.0,-posInicial,0.0);
+                    objeto.agregarHijo(hijo);
+                    punteroPaneles.push(hijo);
+
+                    posInicial += largoPanel
+
+                }
+
+                return objeto;
+
+            }
+
+            // para generar el nucleo
+
+            function generarNucleo()
+            {
+                const factorEscala = 0.7;
+                // modulo bezier
+                const anchoMB = factorEscala*0.5;
+                const altoMB =  factorEscala*0.5;
+                const profundidadMB =  factorEscala*0.5;
+                const colorMB = vec3.fromValues(0.8,0.0,0.8);
+                const minladoMB = Math.min(anchoMB,altoMB);
+                const radioEsquina = 0.2*minladoMB;
+                const gradoBezierMB = 2;
+                const puntosControlMB = 
+                [
+                    anchoMB/2,-altoMB/2+radioEsquina,0.0,
+                    anchoMB/2,0.0,0.0,
+                    anchoMB/2,altoMB/2-radioEsquina,0.0,
+
+                    anchoMB/2,altoMB/2-radioEsquina,0.0,
+                    anchoMB/2,altoMB/2,0.0,
+                    anchoMB/2-radioEsquina,altoMB/2,0.0,
+
+                    anchoMB/2-radioEsquina,altoMB/2,0.0,
+                    0.0,altoMB/2,0.0,
+                    -anchoMB/2+radioEsquina,altoMB/2,0.0,
+
+                    -anchoMB/2+radioEsquina,altoMB/2,0.0,
+                    -anchoMB/2,altoMB/2,0.0,
+                    -anchoMB/2,altoMB/2-radioEsquina,0.0,
+
+                    -anchoMB/2,altoMB/2-radioEsquina,0.0,
+                    -anchoMB/2,0.0,0.0,
+                    -anchoMB/2,-altoMB/2+radioEsquina,0.0,
+
+                    -anchoMB/2,-altoMB/2+radioEsquina,0.0,
+                    -anchoMB/2,-altoMB/2,0.0,
+                    -anchoMB/2+radioEsquina,-altoMB/2,0.0,
+
+                    -anchoMB/2+radioEsquina,-altoMB/2,0.0,
+                    0.0,-altoMB/2,0.0,
+                    anchoMB/2-radioEsquina,-altoMB/2,0.0,
+
+                    anchoMB/2-radioEsquina,-altoMB/2,0.0,
+                    anchoMB/2,-altoMB/2,0.0,
+                    anchoMB/2,-altoMB/2+radioEsquina,0.0
+                ];
+
+                // modulo cuasi esferico
+                const radioMCE = factorEscala*0.7;
+                const angulo = 120;
+                const invertirNormal = true;
+                const colorMCE = vec3.fromValues(0.8,0.6,0.0);
+                const largoMCE = 2*radioMCE*Math.sin(angulo*Math.PI/360);
+
+
+                // modulo cuasi cilíndrico
+                const radioMCC = factorEscala*0.7;
+                const largoMCC = factorEscala*2.5;
+                const colorMCC = vec3.fromValues(0.8,0.6,0.0);
+                const minladoMCC = Math.min(largoMCC,2*radioMCC);
+                const recorteEsquina = 0.2*minladoMCC;
+                const gradoBezierMCC = 1;
+                const puntosControlMCC = 
+                [
+                    0.0,-largoMCC/2, 0.0,
+                    radioMCC-recorteEsquina,-largoMCC/2,0.0,
+
+                    radioMCC-recorteEsquina,-largoMCC/2,0.0,
+                    radioMCC,-largoMCC/2+recorteEsquina,0.0,
+
+                    radioMCC,-largoMCC/2+recorteEsquina,0.0,
+                    radioMCC,largoMCC/2-recorteEsquina,0.0,
+
+                    radioMCC,largoMCC/2-recorteEsquina,0.0,
+                    radioMCC-recorteEsquina,largoMCC/2,0.0,
+
+                    radioMCC-recorteEsquina,largoMCC/2,0.0,
+                    0.0,largoMCC/2,0.0
+                ];
+
+                var objeto = new Objeto3D();
+                var hijo = new Objeto3D();
+                
+                var nivel = bezierCompleto2D(puntosControlMB,160, gradoBezierMB);
+                var recorrido = generarRecta(profundidadMB);
+                var superficie = superficieBarridoCompleta(nivel,recorrido);
+
+                hijo.setGeometria(superficie);
+                hijo.setColor(colorMB[0],colorMB[1],colorMB[2]);
+                hijo.setRotacion(0,1,0,Math.PI/2);
+                hijo.setPosicion(0.0,0.0,(largoMCC+profundidadMB)/2);
+                objeto.agregarHijo(hijo);
+
+                hijo = new Objeto3D();
+                hijo.setGeometria(superficie);
+                hijo.setColor(colorMB[0],colorMB[1],colorMB[2]);
+                hijo.setRotacion(0,1,0,Math.PI/2);
+                hijo.setPosicion(0.0,0.0,-(largoMCC+profundidadMB)/2);
+                objeto.agregarHijo(hijo);
+                
+                nivel = bezierCompleto2D(puntosControlMCC,10, gradoBezierMCC);
+                recorrido = generarArcoCircunferencia(0,100);
+                superficie = superficieRevolucionCompleta(nivel,recorrido,false,false,false);
+
+                hijo = new Objeto3D();
+                hijo.setGeometria(superficie);
+                hijo.setColor(colorMCE[0],colorMCE[1],colorMCE[2]);
+                objeto.agregarHijo(hijo);
+                
+                hijo = new Objeto3D();
+                hijo.setGeometria(superficie);
+                hijo.setColor(colorMCE[0],colorMCE[1],colorMCE[2]);
+                hijo.setPosicion(0.0,0.0,-(largoMCC+profundidadMB));
+                objeto.agregarHijo(hijo);
+
+                nivel = generarArcoCircunferencia(radioMCE,50,angulo,-angulo/2);
+                recorrido = generarArcoCircunferencia(0,100);
+                superficie = superficieRevolucionCompleta(nivel,recorrido,invertirNormal);
+
+                hijo = new Objeto3D();
+                hijo.setGeometria(superficie);
+                hijo.setColor(colorMCE[0],colorMCE[1],colorMCE[2]);
+                hijo.setPosicion(0.0,0.0,(largoMCC+largoMCE)/2+profundidadMB);
+                objeto.agregarHijo(hijo);
+                
+
+                return objeto;
+            }
+
             var sBVerticeBuffer;
             var sBNormalBuffer;
             var sBIndexBuffer;
@@ -1091,7 +1808,6 @@
 
             }
 
-            //function gererarEsfera(radio,cantidadFilas,cantidadColumas)
             class Objeto3D
             {
                 // atributos privados
@@ -1110,7 +1826,7 @@
                     this.rotacionEje = vec3.create();
                     this.rotacionAngulo = 0;
                     this.escala = vec3.fromValues(1,1,1);
-                    this.color = vec3.create();
+                    this.color = vec3.fromValues(0.0,0.2,0.8);
                     // hijos
                     this.hijos = [];
                 } 
@@ -1148,9 +1864,11 @@
                     // setear matrices modelado y normales
                     var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
                     var normalMatrixUniform  = gl.getUniformLocation(glProgram, "normalMatrix");
+                    var colorDifusoUniform  = gl.getUniformLocation(glProgram, "colorDifuso");
 
                     gl.uniformMatrix4fv(modelMatrixUniform, false, m);
                     gl.uniformMatrix4fv(normalMatrixUniform, false, this.matrizNormal);
+                    gl.uniform3fv(colorDifusoUniform, this.color);
 
                     //setear buffers    
                     vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
@@ -1179,6 +1897,13 @@
                     this.uVBuffer = uVBuffer;
                     this.indexBuffer = indexBuffer;
                 }
+                setGeometria (buffers)
+                {
+                    this.vertexBuffer = buffers.supBarridoVerticeBuffer;
+                    this.normalBuffer = buffers.supBarridoNormalBuffer;
+                    this.uVBuffer = buffers.supBarridoUVBuffer;
+                    this.indexBuffer = buffers.supBarridoIndexBuffer;
+                }
                 agregarHijo (h) 
                 {
                     this.hijos.push(h);
@@ -1188,7 +1913,7 @@
                     var indice = this.hijos.indexOf(h);
                     if (indice != -1)
                     {
-                        this.hijos = this.hijos.splice(indice,1);
+                        this.hijos.splice(indice,1);
                     }
                 }
                 setPosicion (x,y,z) 
@@ -1202,7 +1927,7 @@
                 }
                 setColor(r,g,b)
                 {
-
+                    vec3.set(this.color,r,g,b);
                 }
                 setEscala (x,y,z) 
                 {
@@ -1212,24 +1937,23 @@
             
             function inicializarObjetos()
             {
-                var recorrido1 = generarRecta(1);
-                var nivel1 = generarArcoCircunferencia(0.2,100);
-                var buffers1 = superficieBarridoCompleta(nivel1,recorrido1);
-
-                var recorrido2 = generarArcoCircunferencia(0,100,180);
-                var nivel2= generarArcoCircunferencia(1,100);
-                var buffers2 = superficieBarridoCompleta(nivel2,recorrido2);
 
                 objetos3D = new Objeto3D();
-                objetos3D.setGeometria(buffers2.supBarridoVerticeBuffer,buffers2.supBarridoNormalBuffer,null,buffers2.supBarridoIndexBuffer);                  
 
-                var esfera = new Objeto3D();
-                esfera.setGeometria(buffers1.supBarridoVerticeBuffer,buffers1.supBarridoNormalBuffer,null,buffers1.supBarridoIndexBuffer);
-                esfera.setPosicion(-2.0,0.0,0.0);
+                var nivel = generarArcoCircunferencia(2,50,120,-60,);
+                var recorrido = generarArcoCircunferencia(0,100);
+                var superficie = superficieRevolucionCompleta(nivel,recorrido,true);
 
-                objetos3D.agregarHijo(esfera);
+                var hijo = new Objeto3D();
+                hijo.setGeometria(superficie);
 
-                                
+                //hijo.setPosicion(-2.5,0,0);
+                //objetos3D.agregarHijo(hijo);
+
+                var hijo2 = generarNucleo();
+                //hijo2.setEscala(0.25,0.25,0.25)
+                objetos3D.setRotacion(0,1,0,Math.PI/2);
+                objetos3D.agregarHijo(hijo2);               
             }
 
             /*
@@ -1252,34 +1976,16 @@
             } 
             
             function setupVertexShaderMatrix2(){
-                //var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
                 var viewMatrixUniform  = gl.getUniformLocation(glProgram, "viewMatrix");
                 var projMatrixUniform  = gl.getUniformLocation(glProgram, "projMatrix");
-                //var normalMatrixUniform  = gl.getUniformLocation(glProgram, "normalMatrix");
 
-                //gl.uniformMatrix4fv(modelMatrixUniform, false, modelMatrix);
                 gl.uniformMatrix4fv(viewMatrixUniform, false, viewMatrix);
                 gl.uniformMatrix4fv(projMatrixUniform, false, projMatrix);
-                //gl.uniformMatrix4fv(normalMatrixUniform, false, normalMatrix);
             }       
             
             function drawScene()
             {
                 setupVertexShaderMatrix();
-                /*
-                vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
-                gl.enableVertexAttribArray(vertexPositionAttribute);
-                gl.bindBuffer(gl.ARRAY_BUFFER, bezierVerticeBuffer);
-                gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
-
-                vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
-                gl.enableVertexAttribArray(vertexNormalAttribute);
-                gl.bindBuffer(gl.ARRAY_BUFFER, bezierNormalBuffer);
-                gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
-
-                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bezierIndexBuffer);
-                gl.drawElements( gl.LINE_STRIP, bezierIndexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
-                */
 
                 /*
                 vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
@@ -1353,13 +2059,15 @@
                 objetos3D.dibujar(viewMatrix);
 
                 rotate_angle += 0.01;
+
+                /*
+                for(var i = 0; i<4; i++)
+                {
+                    punteroPaneles[i].setRotacion(1,0,0,rotate_angle);
+                }
+                */
                 
-                objetos3D.setRotacion(0,-1,0,rotate_angle);
-
-                //mat4.identity(viewMatrix);
-                //mat4.translate(viewMatrix,viewMatrix, [0.0, 0.0, -5.0]);
-                //mat4.rotate(viewMatrix,viewMatrix, rotate_angle, [0.0, -1.0, 0.0]);
-
+                //objetos3D.setRotacion(1,0,0,rotate_angle);
 
                 //drawScene();
                 //animate();
