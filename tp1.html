@@ -4,7 +4,7 @@
         <title></title>        
         <style>
             body{ background-color: grey; }
-            canvas{ background-color: rgb(23, 2, 73); }
+            canvas{ background-color: rgb(9, 0, 31); }
 			textarea{ background-color: black; foreground-color: white;}
         </style>
     </head>
@@ -40,7 +40,7 @@
 
                 vPosWorld=(modelMatrix*vec4(aVertexPosition,1.0)).xyz;    //la posicion en coordenadas de mundo
                 vNormal=(normalMatrix*vec4(aVertexNormal,1.0)).xyz;       //la normal en coordenadas de mundo                
-                
+                vNormal = normalize(vNormal);
             }
         </script>
 
@@ -1446,12 +1446,13 @@
                 return objeto;
             }
 
+            var cantidadModulos = 5;
+
             function generarAnillo()
             {
-                var cantidadModulos = 5;
 
                 // centro del anillo
-                const factorTamanio = 0.25;
+                const factorTamanio = 0.5;
 
                 const radioInterno = factorTamanio*1.5;
                 const anchoCentro = factorTamanio*0.3;
@@ -1473,8 +1474,8 @@
                 const cantPuntosAnilloR = 200;
 
                 // modulo 
-                const anchoModulo = factorTamanio*2.0;
-                const altoModulo = factorTamanio*1.1;
+                const anchoModulo = factorTamanio*1.1;
+                const altoModulo = factorTamanio*3.0;
                 const colorModulo = vec3.fromValues(0.0,0.75,0.75);
                 
                 var objeto = new Objeto3D();
@@ -1542,12 +1543,12 @@
             }
 
             var punteroPaneles;
+            var cantidadFilasPaneles = 4;
 
             function generarPanelesSolares()
             {
-                const factorEscala = 0.6;
+                const factorEscala = 1.2;
 
-                var cantidadFilasPaneles = 4;
                 punteroPaneles = [];
 
                 // panel 
@@ -1558,7 +1559,7 @@
                 const radioBarra = factorEscala*0.04;
                 const largoBarra = factorEscala*0.5;
 
-                const colorPaneles = vec3.fromValues(0.2,0.2,0.8);
+                const colorPaneles = vec3.fromValues(0.8,0.8,0.2);
 
                 // barra
                 const largoOriginal = factorEscala*1.2;
@@ -1723,6 +1724,130 @@
                 hijo.setPosicion(0.0,0.0,(largoMCC+largoMCE)/2+profundidadMB);
                 objeto.agregarHijo(hijo);
                 
+
+                return objeto;
+            }
+
+            // estación espacial
+            var punteroAnillo;
+
+            function generarEstacionEspacial()
+            {
+                const distaciaPanelesSolares = 3;
+
+                var objeto = new Objeto3D();
+                var hijo = generarNucleo();
+                objeto.agregarHijo(hijo);
+
+                var hijo = new Objeto3D();
+                hijo = generarNucleo();
+                
+                objeto.agregarHijo(hijo);
+
+                punteroAnillo = generarAnillo();
+                objeto.agregarHijo(punteroAnillo);
+
+                hijo = generarPanelesSolares();
+                hijo.setRotacion(1,0,0,Math.PI/2);
+                hijo.setPosicion(0.0,0.0,-distaciaPanelesSolares);
+                objeto.agregarHijo(hijo);
+                //hijo.setPosicion(0.0,0.0,(largoMCC+largoMCE)/2+profundidadMB);
+
+                return objeto;
+            }
+
+            // tierra
+            function generarTierra()
+            {
+                const radio = 500;
+                const color = vec3.fromValues(0.0,0.8,1.0);
+
+                var objeto = new Objeto3D()
+                var nivel = generarArcoCircunferencia(radio,100,90,-90);
+                var recorrido = generarArcoCircunferencia(0,100);
+                var superficie = superficieRevolucionCompleta(nivel,recorrido,false,false,false);
+                objeto.setGeometria(superficie);
+                objeto.setColor(color[0],color[1],color[2]);
+
+                return objeto;
+
+            }
+
+            // capsula
+            function generarCapsula()
+            {
+
+                // central
+                
+                const colorCentral = vec3.fromValues(0.8,0.8,0.0);
+                const radioC1 = 0.1;
+                const radioC2 = 0.14;
+                const radioC3 = 0.16;
+                const radioC4 = 0.3;
+                const radioC5 = 0.25;
+                const radioC6 = 0.1;
+                const largoC1 = 0.08;
+                const largoC2 = 0.4;
+                const largoC3 = 0.04;
+                const largoC4 = 0.01;
+                const gradoBezierC = 2;
+
+                const puntosControlC =
+                [
+                    radioC1,0.0,0.0,
+                    (radioC1+radioC2)/2,largoC1/2,0.0,
+                    radioC2,largoC1,0.0,
+
+                    radioC2,largoC1,0.0,
+                    (radioC3+radioC2)/2,largoC1,0.0,
+                    radioC3,largoC1,0.0,
+
+                    radioC3,largoC1,0.0,
+                    radioC4,largoC1+largoC2/2,0.0,
+                    radioC4,largoC1+largoC2,0.0,
+
+                    radioC4,largoC1+largoC2,0.0,
+                    (radioC4+radioC5)/2,largoC1+largoC2+largoC3/2,0.0,
+                    radioC5,largoC1+largoC2+largoC3,0.0,
+
+                    radioC5,largoC1+largoC2+largoC3,0.0,
+                    (radioC5+radioC6)/2,largoC1+largoC2+largoC3+largoC4/2,0.0,
+                    radioC6,largoC1+largoC2+largoC3+largoC4,0.0
+                ];
+
+                // cohete
+                const radioCohete = 0.1;
+                const radioCoheteMin = 0.02;
+                const longitudCohete = 0.2;
+                const colorCohete = vec3.fromValues(0.1,0.1,0.1);
+                const gradoBezierCohete = 2;
+                const puntosControlCohete =
+                [
+                    radioCoheteMin,0.0,0.0,
+                    radioCohete,longitudCohete/2,0.0,
+                    radioCohete,longitudCohete,0.0
+                ];
+
+
+
+                var objeto = new Objeto3D();
+                var hijo = new Objeto3D();
+                
+                var nivel = bezierCompleto2D(puntosControlC,100, gradoBezierC);
+                var recorrido = generarCirculoBezier(0.0001,100);
+                var superficie = superficieRevolucionCompleta(nivel,recorrido,true);
+                hijo.setGeometria(superficie);
+                hijo.setColor(colorCentral[0],colorCentral[1],colorCentral[2]);
+                hijo.setPosicion(0.0,0.0,+(largoC1+largoC2+largoC3+largoC4)/2);
+                objeto.agregarHijo(hijo);
+
+                nivel = bezierCompleto2D(puntosControlCohete,20, gradoBezierCohete);
+                superficie = superficieRevolucionCompleta(nivel,recorrido,true,true,false);
+                hijo = new Objeto3D();
+                hijo.setGeometria(superficie);
+                hijo.setColor(colorCohete[0],colorCohete[1],colorCohete[2]);
+                hijo.setPosicion(0.0,0.0,-(largoC1+largoC2+largoC3+largoC4)/2);
+                objeto.agregarHijo(hijo);
 
                 return objeto;
             }
@@ -1940,20 +2065,22 @@
 
                 objetos3D = new Objeto3D();
 
-                var nivel = generarArcoCircunferencia(2,50,120,-60,);
-                var recorrido = generarArcoCircunferencia(0,100);
-                var superficie = superficieRevolucionCompleta(nivel,recorrido,true);
+                var hijo = generarTierra();
 
-                var hijo = new Objeto3D();
-                hijo.setGeometria(superficie);
+                hijo.setPosicion(0,-300,-500);
+                hijo.setRotacion(1,0,0,-Math.PI/4)
+                objetos3D.agregarHijo(hijo);
 
-                //hijo.setPosicion(-2.5,0,0);
-                //objetos3D.agregarHijo(hijo);
-
-                var hijo2 = generarNucleo();
-                //hijo2.setEscala(0.25,0.25,0.25)
-                objetos3D.setRotacion(0,1,0,Math.PI/2);
-                objetos3D.agregarHijo(hijo2);               
+                var hijo2 = generarEstacionEspacial();
+                hijo2.setEscala(0.3,0.3,0.3);
+                hijo2.setRotacion(0,-1,-1,0.5*Math.PI);
+                objetos3D.agregarHijo(hijo2); 
+                
+                var hijo3 = generarCapsula();
+                hijo3.setEscala(0.5,0.5,0.5);
+                hijo3.setPosicion(-0.8,0.8,0);
+                //ijo3.setRotacion(0,1,0,0.75*Math.PI);
+                objetos3D.agregarHijo(hijo3);
             }
 
             /*
@@ -2065,9 +2192,10 @@
                 {
                     punteroPaneles[i].setRotacion(1,0,0,rotate_angle);
                 }
-                */
                 
-                //objetos3D.setRotacion(1,0,0,rotate_angle);
+                punteroAnillo.setRotacion(0,0,1,rotate_angle);
+                */
+                //objetos3D.setRotacion(0,1,0,rotate_angle);
 
                 //drawScene();
                 //animate();
