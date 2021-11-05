@@ -6,18 +6,28 @@
             body{ background-color: grey; }
             canvas{ background-color: rgb(9, 0, 31); }
 			textarea{ background-color: black; foreground-color: white;}
+
+            #contenedor3d{
+                position: relative;
+                width: 100%;
+                height: 100%;
+                border: 1px solid black;
+                margin: auto;
+            }
         </style>
     </head>
     <body>
-
-    	<center>    		            
-            <canvas id="my-canvas" width="1000" height="800">
-            	Your browser does not support the HTML5 canvas element.
-    		</canvas>    		
-    	</center>
+        <div id="contenedor3d">
+            <center>    		            
+                <canvas id="my-canvas" width="1000" height="700">
+                    Your browser does not support the HTML5 canvas element.
+                </canvas>    		
+            </center>
+        </div>
 
         <script type="text/javascript" src="js/gl-matrix.js"></script>
         <script src="js/bezier.js" type="module"></script>
+        <script src="js/jquery.min.js"></script>
         
         <script id="shader-vs" type="x-shader/x-vertex">
 
@@ -91,6 +101,8 @@
 
             var buffersSupBarrido;
 
+            // mis variables globales
+
             var objetos3D;
          
             function initWebGL(){
@@ -137,7 +149,12 @@
                 mat4.rotate(modelMatrix,modelMatrix, -1.57078, [1.0, 0.0, 0.0]);
 
                 mat4.identity(viewMatrix);
-                mat4.translate(viewMatrix,viewMatrix, [0.0, 0.0, -5.0]);
+                let alfa = 20;
+                let x = 0.0;
+                let y = 5.0*Math.sin(alfa*Math.PI/180);
+                let z = 5.0*Math.cos(alfa*Math.PI/180);
+                //mat4.translate(viewMatrix,viewMatrix, [0.0, 0.0, -5.0]);
+                mat4.lookAt(viewMatrix,[x,y,z],[0,0,0],[0,1,0]);
             }
                     
                     
@@ -1593,6 +1610,11 @@
                     posInicial += largoPanel
 
                 }
+                hijo = new Objeto3D();
+                hijo.setPosicion(0.0,-(largoOriginal+cantidadFilasPaneles*largoPanel/2),0.0);
+                objeto.agregarHijo(hijo);
+                hijo.agregarHijo(camara2);
+
 
                 return objeto;
 
@@ -1752,6 +1774,7 @@
                 hijo.setPosicion(0.0,0.0,-distaciaPanelesSolares);
                 objeto.agregarHijo(hijo);
                 //hijo.setPosicion(0.0,0.0,(largoMCC+largoMCE)/2+profundidadMB);
+                objeto.agregarHijo(camara1);
 
                 return objeto;
             }
@@ -1779,7 +1802,7 @@
 
                 // central
                 
-                const colorCentral = vec3.fromValues(0.8,0.8,0.0);
+                const colorCentral = vec3.fromValues(0.8,0.6,0.0);
                 const radioC1 = 0.1;
                 const radioC2 = 0.14;
                 const radioC3 = 0.16;
@@ -1819,13 +1842,18 @@
                 const radioCohete = 0.1;
                 const radioCoheteMin = 0.02;
                 const longitudCohete = 0.2;
-                const colorCohete = vec3.fromValues(0.1,0.1,0.1);
+                const colorCohete = vec3.fromValues(0.3,0.3,0.3);
                 const gradoBezierCohete = 2;
+                const deltaX = 0.001;
                 const puntosControlCohete =
                 [
-                    radioCoheteMin,0.0,0.0,
-                    radioCohete,longitudCohete/2,0.0,
-                    radioCohete,longitudCohete,0.0
+                    -radioCoheteMin-deltaX,0.0,0.0,
+                    -radioCohete-deltaX,-longitudCohete/2,0.0,
+                    -radioCohete-deltaX,-longitudCohete,0.0,
+
+                    -radioCohete+deltaX,-longitudCohete,0.0,
+                    -radioCohete+deltaX,-longitudCohete/2,0.0,
+                    -radioCoheteMin+deltaX,0.0,0.0,
                 ];
 
 
@@ -1846,8 +1874,14 @@
                 hijo = new Objeto3D();
                 hijo.setGeometria(superficie);
                 hijo.setColor(colorCohete[0],colorCohete[1],colorCohete[2]);
+                hijo.setRotacion(0,1,0,Math.PI);
                 hijo.setPosicion(0.0,0.0,-(largoC1+largoC2+largoC3+largoC4)/2);
                 objeto.agregarHijo(hijo);
+
+                objeto.agregarHijo(camara3);
+                camara3.setRadio(0.7);
+                camara3.setPhi(Math.PI);
+                camara3.setTheta(0.35*Math.PI);
 
                 return objeto;
             }
@@ -2060,6 +2094,84 @@
                 }
             }
             
+            class Camara
+            {
+                constructor(radio,phi,theta,thetaMax,thetaMin,matrizVista,centro,up)
+                {
+                    //buffers
+                    this.radio = 1;
+                    this.phi = 0;
+                    this.theta = Math.PI/2;
+                    this.thetaMin = 0+0.00001;
+                    this.thetaMax = Math.PI-0.00001;
+                    this.matrizVista = mat4.create();
+                    this.centro = vec3.create();
+                    this.up = vec3.fromValues(0,1,0);
+
+                } 
+                // metodos privados
+
+
+                // métodos públicos
+                setRadio(radio)
+                {
+                    this.radio = radio;
+                }
+
+                getRadio()
+                {
+                    return this.radio;
+                }
+                
+                setPhi(phi)
+                {
+                    this.phi = phi;
+                }
+
+                getPhi()
+                {
+                    return this.phi;
+                }
+
+                setTheta(theta)
+                {
+                    this.theta = theta;
+                    if(theta > this.thetaMax)
+                        this.theta = this.thetaMax;
+                    if(theta < this.thetaMin)
+                        this.theta = this.thetaMin;
+                }
+
+                getTheta()
+                {
+                    return this.theta;
+                }
+
+                getMatrizVista()
+                {
+                    return this.matrizVista;
+                }
+
+                dibujar (matrizVista, matrizPadre = null)
+                {
+                    mat4.getTranslation(this.centro,matrizPadre)
+                    var centroCamara = vec3.fromValues(this.radio*Math.sin(this.phi)*Math.sin(this.theta),this.radio*Math.cos(this.theta),this.radio*Math.cos(this.phi)*Math.sin(this.theta));
+                    vec3.add(centroCamara,centroCamara,this.centro)
+                    mat4.lookAt(this.matrizVista,centroCamara,this.centro,this.up);
+                }
+            }
+
+            var camara1 = new Camara();
+            var camara2 = new Camara();
+            var camara3 = new Camara();
+            var camaraElegida = camara1;
+            const pasoRadioC1 = 0.1;
+            const pasoAnguloC1 = 0.01;
+            const pasoRadioC3 = 0;
+            const pasoAnguloC3 = 0;
+            var pasoRadio = pasoRadioC1;
+            var pasoAngulo = pasoAnguloC1;
+
             function inicializarObjetos()
             {
 
@@ -2184,8 +2296,13 @@
                 setupVertexShaderMatrix2();
 
                 objetos3D.dibujar(viewMatrix);
+                if(isMouseDown)
+                    actualizarOrientacion();
+                viewMatrix = camaraElegida.getMatrizVista();
 
                 rotate_angle += 0.01;
+
+                //camaraElegida.setPhi(rotate_angle);
 
                 /*
                 for(var i = 0; i<4; i++)
@@ -2201,10 +2318,94 @@
                 //animate();
             }
 
+            var isMouseDown = false;
+            var mouse = {x: 0, y: 0};
+
+            var previousClientX;
+            var previousClientY;
+
+            $("#contenedor3d").mousemove(function(e){ 
+                mouse.x = e.clientX || e.pageX; 
+                mouse.y = e.clientY || e.pageY 
+            });
+            
+            $('#contenedor3d').mousedown(function(event){		
+                isMouseDown = true;        
+            });
+
+            $('body').mouseup(function(event){
+                isMouseDown = false;		
+            });
+
+            $('body').on("keydown",function(event){
+                //console.log(event);
+                var radioCamara;
+                switch(event.key){
+                    case "1":
+                        camaraElegida = camara1;
+                        pasoRadio = pasoRadioC1;
+                        pasoAngulo = pasoAnguloC1;
+                    break;
+                    case "2":
+                        camaraElegida = camara2;
+                        pasoRadio = pasoRadioC1;
+                        pasoAngulo = pasoAnguloC1;
+                    break;
+                    case "3":
+                        camaraElegida = camara3;
+                        pasoRadio = pasoRadioC3;
+                        pasoAngulo = pasoAnguloC3;
+                    break;  
+                    case "z":
+                        radioCamara = camaraElegida.getRadio();
+                        radioCamara -= pasoRadio;
+                        if(radioCamara< 0)
+                            radioCamara = 0;
+                        camaraElegida.setRadio(radioCamara);
+                    break;
+                    case "x":
+                        radioCamara = camaraElegida.getRadio();
+                        radioCamara += pasoRadio;
+                        camaraElegida.setRadio(radioCamara);
+                    break;  
+
+
+
+            
+                    case "q":
+                        
+                    break; 
+                    case "e":
+                        
+                    break;                                         
+                }
+                    
+            });    
+
+            function actualizarOrientacion()
+            {
+                var deltaX=0;
+                if (previousClientX) deltaX=-(mouse.x - previousClientX);
+
+                var deltaY=0;
+                if (previousClientX) deltaY= (mouse.y-previousClientY);
+
+                previousClientX = mouse.x;
+                previousClientY = mouse.y;
+
+                var phi = camaraElegida.getPhi();
+                var theta = camaraElegida.getTheta();
+                phi += deltaX*pasoAngulo;
+                theta += deltaY*pasoAngulo;
+
+                camaraElegida.setPhi(phi);
+                camaraElegida.setTheta(theta);
+            }
+
             window.onload=initWebGL;
 
         </script>
 
-
+        
     </body>
 </html>
