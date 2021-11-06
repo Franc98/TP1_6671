@@ -27,7 +27,8 @@
 
         <script type="text/javascript" src="js/gl-matrix.js"></script>
         <script src="js/bezier.js" type="module"></script>
-        <script src="js/jquery.min.js"></script>
+        <script src="js/jquery.js"></script>
+        <script src="js/dat.gui.js"></script>
         
         <script id="shader-vs" type="x-shader/x-vertex">
 
@@ -469,7 +470,7 @@
             var camara2 = new Camara();
             var camara3 = new Camara();
             var camaraElegida = camara1;
-            const pasoRadioC1 = 0.1;
+            const pasoRadioC1 = 0.2;
             const pasoAnguloC1 = 0.01;
             const pasoRadioC3 = 0;
             const pasoAnguloC3 = 0;
@@ -477,15 +478,24 @@
             var pasoAngulo = pasoAnguloC1;
 
             // dat.gui
-            var anillo;
             var punteroPaneles;
             var punteroAnillo;
+            var punteroEstacionEspacial;
+            var punteroModuloPanelesSolares;
+            var punteroPadrePanelesSolares;
 
-            var cantidadModulos = 5;
-            var angulosPaneles;
-            var cantidadFilasPaneles = 4;
-            var velocidadAnillo;
-            var anguloAnillo = 0;            
+            var variablesGUI = {
+                cantidadModulos: 5,
+                angulosPaneles: 0,
+                cantidadFilasPaneles: 4,
+                velocidadAnillo: 0
+            };
+            var anguloAnillo = 0;    
+            
+            var cantidadModulosActual = variablesGUI.cantidadModulos;
+            var cantidadFilasPanelesActual = variablesGUI.cantidadFilasPaneles;
+            
+            const gui = new dat.GUI();
 
             // jquery
             var isMouseDown = false;
@@ -1885,6 +1895,8 @@
                 const altoModulo = factorTamanio*3.0;
                 const colorModulo = vec3.fromValues(0.0,0.75,0.75);
                 
+                const cantidadModulos = variablesGUI.cantidadModulos;
+
                 var objeto = new Objeto3D();
 
                 var hijo = generarCentroAnillo(radioInterno,anchoCentro,colorCentro);
@@ -1953,6 +1965,8 @@
                 const factorEscala = 1.2;
 
                 punteroPaneles = [];
+
+                var cantidadFilasPaneles = variablesGUI.cantidadFilasPaneles;
 
                 // panel 
                 const anchoPanel = factorEscala*0.6;
@@ -2150,10 +2164,16 @@
                 punteroAnillo = generarAnillo();
                 objeto.agregarHijo(punteroAnillo);
 
-                hijo = generarPanelesSolares();
+                hijo = new Objeto3D();
                 hijo.setRotacion(1,0,0,Math.PI/2);
                 hijo.setPosicion(0.0,0.0,-distaciaPanelesSolares);
+
+                var hijo2 = generarPanelesSolares();
+                hijo.agregarHijo(hijo2);
                 objeto.agregarHijo(hijo);
+
+                punteroPadrePanelesSolares = hijo
+                punteroModuloPanelesSolares = hijo2;
                 //hijo.setPosicion(0.0,0.0,(largoMCC+largoMCE)/2+profundidadMB);
                 objeto.agregarHijo(camara1);
                 camara1.setRadio(8.0);
@@ -2362,6 +2382,8 @@
                 hijo2.setRotacion(0,-1,-1,0.5*Math.PI);
                 objetos3D.agregarHijo(hijo2); 
 
+                punteroEstacionEspacial = hijo2;
+
                 hijo2 = new Movil();
                 capsula = hijo2;
                 hijo2.setPosicion(0.0,0.0,2.0);
@@ -2378,6 +2400,15 @@
 
                 hijo2.agregarHijo(hijo3);
                 objetos3D.agregarHijo(hijo2);
+
+                var controller = gui.add(variablesGUI,"cantidadModulos",2,8,1);
+                controller.name("Cantidad de Módulos");
+                controller = gui.add(variablesGUI,"cantidadFilasPaneles",1,10,1);
+                controller.name("Filas de Paneles Solares");
+                controller = gui.add(variablesGUI,"angulosPaneles",0,360);
+                controller.name("Ángulo de los Paneles Solares");
+                controller = gui.add(variablesGUI,"velocidadAnillo",-10,10);
+                controller.name("Velocidad de Rotación Anillo");
             }
 
             /*
@@ -2485,18 +2516,35 @@
                     actualizarOrientacion();
                 viewMatrix = camaraElegida.getMatrizVista();
 
-                rotate_angle += 0.01;
-
+                //rotate_angle += 0.01;
                 //camaraElegida.setPhi(rotate_angle);
 
-                /*
-                for(var i = 0; i<4; i++)
+                if(cantidadFilasPanelesActual != variablesGUI.cantidadFilasPaneles)
                 {
-                    punteroPaneles[i].setRotacion(1,0,0,rotate_angle);
+                    cantidadFilasPanelesActual = variablesGUI.cantidadFilasPaneles;
+                    punteroPadrePanelesSolares.quitarHijo(punteroModuloPanelesSolares);
+                    punteroModuloPanelesSolares = generarPanelesSolares();
+                    punteroPadrePanelesSolares.agregarHijo(punteroModuloPanelesSolares);
+                }
+
+                var angulosPaneles = variablesGUI.angulosPaneles*Math.PI/180;
+                for(var i = 0; i<variablesGUI.cantidadFilasPaneles; i++)
+                {
+                    punteroPaneles[i].setRotacion(1,0,0,angulosPaneles);
+                }
+
+                if(cantidadModulosActual != variablesGUI.cantidadModulos)
+                {
+                    cantidadModulosActual = variablesGUI.cantidadModulos;
+                    punteroEstacionEspacial.quitarHijo(punteroAnillo);
+                    punteroAnillo = generarAnillo();
+                    punteroEstacionEspacial.agregarHijo(punteroAnillo);
+
                 }
                 
-                punteroAnillo.setRotacion(0,0,1,rotate_angle);
-                */
+                punteroAnillo.setRotacion(0,0,1,anguloAnillo);
+                anguloAnillo += variablesGUI.velocidadAnillo/100;
+                
                 //objetos3D.setRotacion(0,1,0,rotate_angle);
 
                 //drawScene();
