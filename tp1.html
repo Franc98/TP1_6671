@@ -101,9 +101,403 @@
 
             var buffersSupBarrido;
 
+            // clases
+            class Objeto3D
+            {
+                // atributos privados
+                constructor()
+                {
+                    //buffers
+                    this.vertexBuffer = null;
+                    this.normalBuffer = null;
+                    this.uVBuffer = null;
+                    this.indexBuffer = null;
+                    //matricex
+                    this.matrizModelado = mat4.create();
+                    this.matrizNormal = mat4.create();
+                    // parametros
+                    this.posicion =vec3.create();
+                    this.rotacionEje = vec3.create();
+                    this.rotacionAngulo = 0;
+                    this.escala = vec3.fromValues(1,1,1);
+                    this.color = vec3.fromValues(0.0,0.2,0.8);
+                    // hijos
+                    this.hijos = [];
+                } 
+                // método privado, usa posición, rotación y escala
+                actualizarMatrizModelado()
+                {
+                    mat4.identity(this.matrizModelado);
+                    mat4.translate(this.matrizModelado,this.matrizModelado,this.posicion);
+                    mat4.rotate(this.matrizModelado,this.matrizModelado,this.rotacionAngulo,this.rotacionEje);
+                    mat4.scale(this.matrizModelado,this.matrizModelado,this.escala);
+                    //console.log(this.matrizModelado);
+                }
+                
+                actualizarMatrizNormal(matrizVista,matrizM)
+                {
+                    mat4.multiply(this.matrizNormal,matrizVista,matrizM);
+                    mat4.invert(this.matrizNormal,this.matrizNormal);
+                    mat4.transpose(this.matrizNormal,this.matrizNormal);
+                }
+                // métodos públicos
+                dibujar (matrizVista, matrizPadre = null)
+                {
+                    var m = mat4.create();
+                    this.actualizarMatrizModelado();
+                    
+                    // concatenamos las transformaciones padre/hijo
+                    if(matrizPadre)
+                        mat4.multiply(m, matrizPadre, this.matrizModelado);
+                    else
+                        mat4.copy(m, this.matrizModelado)
+
+                    this.actualizarMatrizNormal(matrizVista, m);
+
+                    if(this.vertexBuffer && this.indexBuffer)
+                    {
+                    // setear matrices modelado y normales
+                    var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
+                    var normalMatrixUniform  = gl.getUniformLocation(glProgram, "normalMatrix");
+                    var colorDifusoUniform  = gl.getUniformLocation(glProgram, "colorDifuso");
+
+                    gl.uniformMatrix4fv(modelMatrixUniform, false, m);
+                    gl.uniformMatrix4fv(normalMatrixUniform, false, this.matrizNormal);
+                    gl.uniform3fv(colorDifusoUniform, this.color);
+
+                    //setear buffers    
+                    vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
+                    gl.enableVertexAttribArray(vertexPositionAttribute);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+                    gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                    vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
+                    gl.enableVertexAttribArray(vertexNormalAttribute);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
+                    gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+                    gl.drawElements( gl.TRIANGLE_STRIP, this.indexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
+                    }
+
+                    for(var i=0;i< this.hijos.length;i++)
+                    {
+                        this.hijos[i].dibujar(matrizVista, m);
+                    } 
+                }
+                
+                setGeometria (vertexBuffer,normalBuffer,uVBuffer,indexBuffer)
+                {
+                    this.vertexBuffer = vertexBuffer;
+                    this.normalBuffer = normalBuffer;
+                    this.uVBuffer = uVBuffer;
+                    this.indexBuffer = indexBuffer;
+                }
+                
+                setGeometria (buffers)
+                {
+                    this.vertexBuffer = buffers.supBarridoVerticeBuffer;
+                    this.normalBuffer = buffers.supBarridoNormalBuffer;
+                    this.uVBuffer = buffers.supBarridoUVBuffer;
+                    this.indexBuffer = buffers.supBarridoIndexBuffer;
+                }
+                
+                agregarHijo (h) 
+                {
+                    this.hijos.push(h);
+                }
+                
+                quitarHijo (h) 
+                {
+                    var indice = this.hijos.indexOf(h);
+                    if (indice != -1)
+                    {
+                        this.hijos.splice(indice,1);
+                    }
+                }
+                
+                setPosicion (x,y,z) 
+                {
+                    vec3.set(this.posicion,x,y,z);
+                }
+                
+                setRotacion (x,y,z,alfa) 
+                {
+                    vec3.set(this.rotacionEje,x,y,z);
+                    this.rotacionAngulo = alfa;
+                }
+                
+                setColor(r,g,b)
+                {
+                    vec3.set(this.color,r,g,b);
+                }
+                
+                setEscala (x,y,z) 
+                {
+                    vec3.set(this.escala,x,y,z);
+                }
+            }
+            
+            class Camara
+            {
+                constructor()
+                {
+                    //buffers
+                    this.radio = 1;
+                    this.phi = 0;
+                    this.theta = Math.PI/2;
+                    this.thetaMin = 0+0.00001;
+                    this.thetaMax = Math.PI-0.00001;
+                    this.matrizVista = mat4.create();
+                    this.centro = vec3.create();
+                    this.up = vec3.fromValues(0,1,0);
+
+                } 
+                // metodos privados
+
+
+                // métodos públicos
+                setRadio(radio)
+                {
+                    this.radio = radio;
+                }
+
+                getRadio()
+                {
+                    return this.radio;
+                }
+                
+                setPhi(phi)
+                {
+                    this.phi = phi;
+                }
+
+                getPhi()
+                {
+                    return this.phi;
+                }
+
+                setTheta(theta)
+                {
+                    this.theta = theta;
+                    if(theta > this.thetaMax)
+                        this.theta = this.thetaMax;
+                    if(theta < this.thetaMin)
+                        this.theta = this.thetaMin;
+                }
+
+                getTheta()
+                {
+                    return this.theta;
+                }
+
+                getMatrizVista()
+                {
+                    return this.matrizVista;
+                }
+
+                dibujar (matrizVista, matrizPadre = null)
+                {
+                    mat4.getTranslation(this.centro,matrizPadre)
+                    var centroCamara = vec3.fromValues(this.radio*Math.sin(this.phi)*Math.sin(this.theta),this.radio*Math.cos(this.theta),this.radio*Math.cos(this.phi)*Math.sin(this.theta));
+                    vec3.transformMat4(centroCamara,centroCamara,matrizPadre);
+                    //vec3.add(centroCamara,centroCamara,this.centro)
+                    mat4.lookAt(this.matrizVista,centroCamara,this.centro,this.up);
+                }
+            }
+            
+            class Movil
+            {
+                constructor()
+                {
+                    //matricex
+                    this.matrizModelado = mat4.create();
+                    this.matrizRotacion = mat4.create();
+                    mat4.identity(this.matrizRotacion);
+                    this.matrizAuxiliar = mat4.create();
+                    // parametros
+                    this.vecAdelanteOriginal = vec3.fromValues(0,0,1);
+                    this.vecArribaOriginal = vec3.fromValues(0,1,0);
+                    this.vecLateralOriginal = vec3.fromValues(1,0,0);
+                    this.posicion = vec3.create();
+                    this.vecAdelante = vec3.fromValues(0,0,1);
+                    this.vecArriba = vec3.fromValues(0,1,0);
+                    this.vecLateral = vec3.fromValues(1,0,0);
+                    // auxiliares
+                    this.vecAdelanteAux = vec3.create();
+                    this.vecArribaAux = vec3.create();
+                    this.vecLateralAux = vec3.create();
+                    // hijos
+                    this.hijos = [];
+                } 
+
+                actualizarMatrizModelado()
+                {
+                    mat4.identity(this.matrizModelado);
+                    mat4.translate(this.matrizModelado,this.matrizModelado,this.posicion);
+                    mat4.multiply(this.matrizModelado,this.matrizModelado,this.matrizRotacion);
+                }
+
+                dibujar (matrizVista, matrizPadre = null)
+                {
+                    var m = mat4.create();
+                    this.actualizarMatrizModelado();
+                    
+                    // concatenamos las transformaciones padre/hijo
+                    if(matrizPadre)
+                        mat4.multiply(m, matrizPadre, this.matrizModelado);
+                    else
+                        mat4.copy(m, this.matrizModelado)
+
+                    for(var i=0;i< this.hijos.length;i++)
+                    {
+                        this.hijos[i].dibujar(matrizVista, m);
+                    } 
+                }
+
+                agregarHijo (h) 
+                {
+                    this.hijos.push(h);
+                }
+                
+                quitarHijo (h) 
+                {
+                    var indice = this.hijos.indexOf(h);
+                    if (indice != -1)
+                    {
+                        this.hijos.splice(indice,1);
+                    }
+                }
+
+                setPosicion (x,y,z) 
+                {
+                    vec3.set(this.posicion,x,y,z);
+                }
+
+                moverHaciaAdelante(distancia)
+                {
+                    vec3.scaleAndAdd(this.posicion,this.posicion,this.vecAdelante,distancia);
+                }
+
+                moverHaciaArriba(distancia)
+                {
+                    vec3.scaleAndAdd(this.posicion,this.posicion,this.vecArriba,distancia);
+                }
+
+                moverHaciaLaIzquierda(distancia)
+                {
+                    vec3.scaleAndAdd(this.posicion,this.posicion,this.vecLateral,distancia);
+                }
+
+                girarAnguloAlabeo(angulo)
+                {
+                    mat4.identity(this.matrizAuxiliar);
+                    mat4.rotate(this.matrizAuxiliar,this.matrizAuxiliar,angulo,this.vecAdelante);
+                    mat4.multiply(this.matrizRotacion,this.matrizAuxiliar,this.matrizRotacion);
+                    //mat4.rotate(this.matrizModelado,this.matrizModelado,angulo,this.vecAdelanteOriginal);
+                    //mat4.multiply(this.matrizRotacion,this.matrizRotacion,this.matrizModelado);
+
+
+                    var sin = Math.sin(angulo);
+                    var cos = Math.cos(angulo);
+
+                    vec3.scale(this.vecArribaAux,this.vecArriba,cos);
+                    vec3.scaleAndAdd(this.vecArribaAux,this.vecArribaAux,this.vecLateral,-sin);
+
+                    vec3.scale(this.vecLateralAux,this.vecLateral,cos);
+                    vec3.scaleAndAdd(this.vecLateralAux,this.vecLateralAux,this.vecArribaAux,sin);
+
+                    vec3.copy(this.vecLateral,this.vecLateralAux);
+                    vec3.normalize(this.vecLateral,this.vecLateral);
+                    vec3.copy(this.vecArriba,this.vecArribaAux);
+                    vec3.normalize(this.vecArriba,this.vecArriba);
+                }
+
+                girarAnguloGuiniada(angulo)
+                {
+                    mat4.identity(this.matrizAuxiliar);
+                    mat4.rotate(this.matrizAuxiliar,this.matrizAuxiliar,angulo,this.vecArriba);
+                    mat4.multiply(this.matrizRotacion,this.matrizAuxiliar,this.matrizRotacion);
+                    //mat4.rotate(this.matrizAuxiliar,this.matrizAuxiliar,angulo,this.vecArribaOriginal);
+                    //mat4.multiply(this.matrizRotacion,this.matrizRotacion,this.matrizAuxiliar);
+                    
+                    var sin = Math.sin(angulo);
+                    var cos = Math.cos(angulo);
+
+                    vec3.scale(this.vecAdelanteAux,this.vecAdelante,cos);
+                    vec3.scaleAndAdd(this.vecAdelanteAux,this.vecAdelanteAux,this.vecLateral,sin);
+
+                    vec3.scale(this.vecLateralAux,this.vecLateral,cos);
+                    vec3.scaleAndAdd(this.vecLateralAux,this.vecLateralAux,this.vecAdelanteAux,-sin);
+
+                    vec3.copy(this.vecLateral,this.vecLateralAux);
+                    vec3.normalize(this.vecLateral,this.vecLateral);
+                    vec3.copy(this.vecAdelante,this.vecAdelanteAux);
+                    vec3.normalize(this.vecAdelante,this.vecAdelante);
+                    
+                }
+
+                girarAnguloCabeceo(angulo)
+                {
+                    mat4.identity(this.matrizAuxiliar);
+                    mat4.rotate(this.matrizAuxiliar,this.matrizAuxiliar,angulo,this.vecLateral);
+                    mat4.multiply(this.matrizRotacion,this.matrizAuxiliar,this.matrizRotacion);
+                    //mat4.rotate(this.matrizAuxiliar,this.matrizAuxiliar,angulo,this.vecLateralOriginal);
+                    //mat4.multiply(this.matrizRotacion,this.matrizRotacion,this.matrizAuxiliar);
+
+                    var sin = Math.sin(angulo);
+                    var cos = Math.cos(angulo);
+                    
+                    vec3.scale(this.vecAdelanteAux,this.vecAdelante,cos);
+                    vec3.scaleAndAdd(this.vecAdelanteAux,this.vecAdelanteAux,this.vecArriba,-sin);
+
+                    vec3.scale(this.vecArribaAux,this.vecArriba,cos);
+                    vec3.scaleAndAdd(this.vecArribaAux,this.vecArribaAux,this.vecAdelanteAux,sin);
+
+                    vec3.copy(this.vecArriba,this.vecArribaAux);
+                    vec3.normalize(this.vecArriba,this.vecArriba);
+                    vec3.copy(this.vecAdelante,this.vecAdelanteAux);
+                    vec3.normalize(this.vecAdelante,this.vecAdelante);
+                    
+                }
+            }
             // mis variables globales
 
             var objetos3D;
+
+            var camara1 = new Camara();
+            var camara2 = new Camara();
+            var camara3 = new Camara();
+            var camaraElegida = camara1;
+            const pasoRadioC1 = 0.1;
+            const pasoAnguloC1 = 0.01;
+            const pasoRadioC3 = 0;
+            const pasoAnguloC3 = 0;
+            var pasoRadio = pasoRadioC1;
+            var pasoAngulo = pasoAnguloC1;
+
+            // dat.gui
+            var anillo;
+            var punteroPaneles;
+            var punteroAnillo;
+
+            var cantidadModulos = 5;
+            var angulosPaneles;
+            var cantidadFilasPaneles = 4;
+            var velocidadAnillo;
+            var anguloAnillo = 0;            
+
+            // jquery
+            var isMouseDown = false;
+            var mouse = {x: 0, y: 0};
+            var previousClientX;
+            var previousClientY;
+            var ruedaMouse;
+
+            // movimiento capsula;
+            const pasoAnguloCapsula = 0.1;
+            const pasoDistaciaCapsula = 0.1;
+            var capsula;
          
             function initWebGL(){
 
@@ -149,7 +543,7 @@
                 mat4.rotate(modelMatrix,modelMatrix, -1.57078, [1.0, 0.0, 0.0]);
 
                 mat4.identity(viewMatrix);
-                let alfa = 20;
+                let alfa = 0;
                 let x = 0.0;
                 let y = 5.0*Math.sin(alfa*Math.PI/180);
                 let z = 5.0*Math.cos(alfa*Math.PI/180);
@@ -238,7 +632,6 @@
                 vec3.scale(n,n,-1);
                 return n;
             }
-
 
             function setupBuffers()
             {
@@ -498,7 +891,6 @@
                 };
             }
             
-
             function bezierCompleto(puntosControl,cantidadPuntosFinalTotal, grado)
             {
                 var cantidadCurvas = Math.floor(puntosControl.length/(3*(grado+1)));
@@ -566,6 +958,7 @@
                 };
 
             }
+
 
             function calcularValorBufferUVSuperficie(posicionesUoV, cantidadPuntosUoV)
             {
@@ -1463,11 +1856,8 @@
                 return objeto;
             }
 
-            var cantidadModulos = 5;
-
             function generarAnillo()
             {
-
                 // centro del anillo
                 const factorTamanio = 0.5;
 
@@ -1530,7 +1920,6 @@
                     anguloInicial += anguloPaso;
                 }
 
-
                 return objeto
             }
 
@@ -1558,9 +1947,6 @@
 
                 return objeto;
             }
-
-            var punteroPaneles;
-            var cantidadFilasPaneles = 4;
 
             function generarPanelesSolares()
             {
@@ -1614,6 +2000,7 @@
                 hijo.setPosicion(0.0,-(largoOriginal+cantidadFilasPaneles*largoPanel/2),0.0);
                 objeto.agregarHijo(hijo);
                 hijo.agregarHijo(camara2);
+                camara2.setRadio(8.0);
 
 
                 return objeto;
@@ -1751,7 +2138,6 @@
             }
 
             // estación espacial
-            var punteroAnillo;
 
             function generarEstacionEspacial()
             {
@@ -1759,11 +2145,6 @@
 
                 var objeto = new Objeto3D();
                 var hijo = generarNucleo();
-                objeto.agregarHijo(hijo);
-
-                var hijo = new Objeto3D();
-                hijo = generarNucleo();
-                
                 objeto.agregarHijo(hijo);
 
                 punteroAnillo = generarAnillo();
@@ -1775,11 +2156,13 @@
                 objeto.agregarHijo(hijo);
                 //hijo.setPosicion(0.0,0.0,(largoMCC+largoMCE)/2+profundidadMB);
                 objeto.agregarHijo(camara1);
+                camara1.setRadio(8.0);
 
                 return objeto;
             }
 
             // tierra
+
             function generarTierra()
             {
                 const radio = 500;
@@ -1797,6 +2180,7 @@
             }
 
             // capsula
+            
             function generarCapsula()
             {
 
@@ -1877,11 +2261,6 @@
                 hijo.setRotacion(0,1,0,Math.PI);
                 hijo.setPosicion(0.0,0.0,-(largoC1+largoC2+largoC3+largoC4)/2);
                 objeto.agregarHijo(hijo);
-
-                objeto.agregarHijo(camara3);
-                camara3.setRadio(0.7);
-                camara3.setPhi(Math.PI);
-                camara3.setTheta(0.35*Math.PI);
 
                 return objeto;
             }
@@ -1967,211 +2346,6 @@
 
             }
 
-            class Objeto3D
-            {
-                // atributos privados
-                constructor(vertexBuffer,normalBuffer,uVBuffer,indexBuffer,matrizModelado,matrizNormal,posicion,rotacionEje,rotacionAngulo,escala,color,hijos)
-                {
-                    //buffers
-                    this.vertexBuffer = null;
-                    this.normalBuffer = null;
-                    this.uVBuffer = null;
-                    this.indexBuffer = null;
-                    //matricex
-                    this.matrizModelado = mat4.create();
-                    this.matrizNormal = mat4.create();
-                    // parametros
-                    this.posicion =vec3.create();
-                    this.rotacionEje = vec3.create();
-                    this.rotacionAngulo = 0;
-                    this.escala = vec3.fromValues(1,1,1);
-                    this.color = vec3.fromValues(0.0,0.2,0.8);
-                    // hijos
-                    this.hijos = [];
-                } 
-                // método privado, usa posición, rotación y escala
-                actualizarMatrizModelado()
-                {
-                    mat4.identity(this.matrizModelado);
-                    mat4.translate(this.matrizModelado,this.matrizModelado,this.posicion);
-                    mat4.rotate(this.matrizModelado,this.matrizModelado,this.rotacionAngulo,this.rotacionEje);
-                    mat4.scale(this.matrizModelado,this.matrizModelado,this.escala);
-                    //console.log(this.matrizModelado);
-                }
-                actualizarMatrizNormal(matrizVista,matrizM)
-                {
-                    mat4.multiply(this.matrizNormal,matrizVista,matrizM);
-                    mat4.invert(this.matrizNormal,this.matrizNormal);
-                    mat4.transpose(this.matrizNormal,this.matrizNormal);
-                }
-                // métodos públicos
-                dibujar (matrizVista, matrizPadre = null)
-                {
-                    var m = mat4.create();
-                    this.actualizarMatrizModelado();
-                    
-                    // concatenamos las transformaciones padre/hijo
-                    if(matrizPadre)
-                        mat4.multiply(m, matrizPadre, this.matrizModelado);
-                    else
-                        mat4.copy(m, this.matrizModelado)
-
-                    this.actualizarMatrizNormal(matrizVista, m);
-
-                    if(this.vertexBuffer && this.indexBuffer)
-                    {
-                    // setear matrices modelado y normales
-                    var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
-                    var normalMatrixUniform  = gl.getUniformLocation(glProgram, "normalMatrix");
-                    var colorDifusoUniform  = gl.getUniformLocation(glProgram, "colorDifuso");
-
-                    gl.uniformMatrix4fv(modelMatrixUniform, false, m);
-                    gl.uniformMatrix4fv(normalMatrixUniform, false, this.matrizNormal);
-                    gl.uniform3fv(colorDifusoUniform, this.color);
-
-                    //setear buffers    
-                    vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
-                    gl.enableVertexAttribArray(vertexPositionAttribute);
-                    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
-                    gl.vertexAttribPointer(vertexPositionAttribute, 3, gl.FLOAT, false, 0, 0);
-
-                    vertexNormalAttribute = gl.getAttribLocation(glProgram, "aVertexNormal");
-                    gl.enableVertexAttribArray(vertexNormalAttribute);
-                    gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
-                    gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
-
-                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-                    gl.drawElements( gl.TRIANGLE_STRIP, this.indexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
-                    }
-
-                    for(var i=0;i< this.hijos.length;i++)
-                    {
-                        this.hijos[i].dibujar(matrizVista, m);
-                    } 
-                }
-                setGeometria (vertexBuffer,normalBuffer,uVBuffer,indexBuffer)
-                {
-                    this.vertexBuffer = vertexBuffer;
-                    this.normalBuffer = normalBuffer;
-                    this.uVBuffer = uVBuffer;
-                    this.indexBuffer = indexBuffer;
-                }
-                setGeometria (buffers)
-                {
-                    this.vertexBuffer = buffers.supBarridoVerticeBuffer;
-                    this.normalBuffer = buffers.supBarridoNormalBuffer;
-                    this.uVBuffer = buffers.supBarridoUVBuffer;
-                    this.indexBuffer = buffers.supBarridoIndexBuffer;
-                }
-                agregarHijo (h) 
-                {
-                    this.hijos.push(h);
-                }
-                quitarHijo (h) 
-                {
-                    var indice = this.hijos.indexOf(h);
-                    if (indice != -1)
-                    {
-                        this.hijos.splice(indice,1);
-                    }
-                }
-                setPosicion (x,y,z) 
-                {
-                    vec3.set(this.posicion,x,y,z);
-                }
-                setRotacion (x,y,z,alfa) 
-                {
-                    vec3.set(this.rotacionEje,x,y,z);
-                    this.rotacionAngulo = alfa;
-                }
-                setColor(r,g,b)
-                {
-                    vec3.set(this.color,r,g,b);
-                }
-                setEscala (x,y,z) 
-                {
-                    vec3.set(this.escala,x,y,z);
-                }
-            }
-            
-            class Camara
-            {
-                constructor(radio,phi,theta,thetaMax,thetaMin,matrizVista,centro,up)
-                {
-                    //buffers
-                    this.radio = 1;
-                    this.phi = 0;
-                    this.theta = Math.PI/2;
-                    this.thetaMin = 0+0.00001;
-                    this.thetaMax = Math.PI-0.00001;
-                    this.matrizVista = mat4.create();
-                    this.centro = vec3.create();
-                    this.up = vec3.fromValues(0,1,0);
-
-                } 
-                // metodos privados
-
-
-                // métodos públicos
-                setRadio(radio)
-                {
-                    this.radio = radio;
-                }
-
-                getRadio()
-                {
-                    return this.radio;
-                }
-                
-                setPhi(phi)
-                {
-                    this.phi = phi;
-                }
-
-                getPhi()
-                {
-                    return this.phi;
-                }
-
-                setTheta(theta)
-                {
-                    this.theta = theta;
-                    if(theta > this.thetaMax)
-                        this.theta = this.thetaMax;
-                    if(theta < this.thetaMin)
-                        this.theta = this.thetaMin;
-                }
-
-                getTheta()
-                {
-                    return this.theta;
-                }
-
-                getMatrizVista()
-                {
-                    return this.matrizVista;
-                }
-
-                dibujar (matrizVista, matrizPadre = null)
-                {
-                    mat4.getTranslation(this.centro,matrizPadre)
-                    var centroCamara = vec3.fromValues(this.radio*Math.sin(this.phi)*Math.sin(this.theta),this.radio*Math.cos(this.theta),this.radio*Math.cos(this.phi)*Math.sin(this.theta));
-                    vec3.add(centroCamara,centroCamara,this.centro)
-                    mat4.lookAt(this.matrizVista,centroCamara,this.centro,this.up);
-                }
-            }
-
-            var camara1 = new Camara();
-            var camara2 = new Camara();
-            var camara3 = new Camara();
-            var camaraElegida = camara1;
-            const pasoRadioC1 = 0.1;
-            const pasoAnguloC1 = 0.01;
-            const pasoRadioC3 = 0;
-            const pasoAnguloC3 = 0;
-            var pasoRadio = pasoRadioC1;
-            var pasoAngulo = pasoAnguloC1;
-
             function inicializarObjetos()
             {
 
@@ -2187,12 +2361,23 @@
                 hijo2.setEscala(0.3,0.3,0.3);
                 hijo2.setRotacion(0,-1,-1,0.5*Math.PI);
                 objetos3D.agregarHijo(hijo2); 
+
+                hijo2 = new Movil();
+                capsula = hijo2;
+                hijo2.setPosicion(0.0,0.0,2.0);
+
                 
                 var hijo3 = generarCapsula();
                 hijo3.setEscala(0.5,0.5,0.5);
-                hijo3.setPosicion(-0.8,0.8,0);
-                //ijo3.setRotacion(0,1,0,0.75*Math.PI);
-                objetos3D.agregarHijo(hijo3);
+                //hijo3.setRotacion(0,1,0,0.75*Math.PI);
+
+                hijo3.agregarHijo(camara3);
+                camara3.setRadio(1.4);
+                camara3.setPhi(Math.PI);
+                //camara3.setTheta(0.35*Math.PI);
+
+                hijo2.agregarHijo(hijo3);
+                objetos3D.agregarHijo(hijo2);
             }
 
             /*
@@ -2318,11 +2503,7 @@
                 //animate();
             }
 
-            var isMouseDown = false;
-            var mouse = {x: 0, y: 0};
 
-            var previousClientX;
-            var previousClientY;
 
             $("#contenedor3d").mousemove(function(e){ 
                 mouse.x = e.clientX || e.pageX; 
@@ -2331,6 +2512,25 @@
             
             $('#contenedor3d').mousedown(function(event){		
                 isMouseDown = true;        
+            });
+
+            $('#contenedor3d').on('wheel', function(event){
+
+                // deltaY obviously records vertical scroll, deltaX and deltaZ exist too
+                if(event.originalEvent.deltaY < 0){
+                // wheeled up
+                    radioCamara = camaraElegida.getRadio();
+                    radioCamara -= pasoRadio;
+                    if(radioCamara< 0)
+                        radioCamara = 0;
+                    camaraElegida.setRadio(radioCamara);
+                }
+                else {
+                // wheeled down
+                    radioCamara = camaraElegida.getRadio();
+                    radioCamara += pasoRadio;
+                    camaraElegida.setRadio(radioCamara);
+                }
             });
 
             $('body').mouseup(function(event){
@@ -2370,14 +2570,38 @@
                     break;  
 
 
-
-            
+                    case "w":
+                        capsula.moverHaciaAdelante(pasoDistaciaCapsula);
+                    break; 
+                    case "s":
+                        capsula.moverHaciaAdelante(-pasoDistaciaCapsula);
+                    break;    
+                    case "a":
+                        capsula.moverHaciaLaIzquierda(pasoDistaciaCapsula);
+                    break; 
+                    case "d":
+                        capsula.moverHaciaLaIzquierda(-pasoDistaciaCapsula);
+                    break;    
                     case "q":
-                        
+                        capsula.moverHaciaArriba(pasoDistaciaCapsula);
                     break; 
                     case "e":
-                        
-                    break;                                         
+                        capsula.moverHaciaArriba(-pasoDistaciaCapsula);
+                    break;         
+                    
+
+                    case "j":
+                        capsula.girarAnguloGuiniada(pasoAnguloCapsula);
+                    break; 
+                    case "l":
+                        capsula.girarAnguloGuiniada(-pasoAnguloCapsula);
+                    break;  
+                    case "i":
+                        capsula.girarAnguloCabeceo(pasoAnguloCapsula);
+                    break; 
+                    case "k":
+                        capsula.girarAnguloCabeceo(-pasoAnguloCapsula);
+                    break;  
                 }
                     
             });    
