@@ -131,7 +131,6 @@
 
             void main(void) {
 
-                //vec3 lightVec=normalize(vec3(5.0,0.0,5.0)-vPosWorld);
                 // obteniendo rayo incidente 
                 vec3 direccionOptimaLuz = normalize(direccionLuz);
                 vec3 direccionRealLuz = normalize(posLuz-vPosWorld);
@@ -140,27 +139,19 @@
                 coeficienteIntensidad = coeficienteIntensidad/(1.0-cosAngMax);
                 coeficienteIntensidad = max(coeficienteIntensidad,0.0);
                 coeficienteIntensidad = pow(coeficienteIntensidad,exponenteAngulo);
-                //coeficienteIntensidad = ceil(coeficienteIntensidad);
                 coeficienteIntensidad = coeficienteIntensidad/(distancia*distancia*deacimientoDistancia.x+distancia*deacimientoDistancia.y+deacimientoDistancia.z);
                 vec3 colorLuzAplicado = coeficienteIntensidad*colorLuz;
-                               
 
                 // aplicando luz a la superficie
 
                 float cosBeta  = dot(direccionRealLuz,vNormal);
-                float cosTita = (cosBeta+abs(cosBeta))/2.0;
-
-                float normaNormal = 2.0*cosTita;
-                vec3 vectorReflejado = ceil(cosTita)*normalize(normaNormal*vNormal - direccionRealLuz);
-                //vec3 vectorReflejado = normaNormal*vNormal - direccionRealLuz;
-                vec3 probarReflejo = normalize(vec3(-1.0,0.0,1.0));
+                vec3 vectorReflejado = reflect(-direccionRealLuz,vNormal);
                 float cosPhi = dot(camara,vectorReflejado);
                 cosPhi = (cosPhi+abs(cosPhi))/2.0;
-                
                 float rS = pow(cosPhi,glossiness);
                 
                 vec3 color = max(vec3(0.0,0.0,0.0),factoresLuminosidad[2]*rS*(colorEspecular*colorLuzAplicado));
-                color = max(color,factoresLuminosidad[1]*cosTita*(colorDifuso*colorLuzAplicado));
+                color = max(color,factoresLuminosidad[1]*cosBeta*(colorDifuso*colorLuzAplicado));
                 color = max(color,factoresLuminosidad[0]*colorAmbiente);
 
                 //gl_FragColor = vec4(vNormal,1.0); 
@@ -212,6 +203,85 @@
          
                 gl_FragColor = color;
          
+            }
+        </script>
+
+        <script id="shader-fs3" type="x-shader/x-fragment">
+            precision highp float;
+            varying vec3 vNormal;
+            varying vec3 vPosWorld;
+
+            // para luces puntuales
+            const int cantidadMaximaLuces = 10;
+
+            uniform vec3 posLuz[cantidadMaximaLuces];
+            uniform vec3 direccionLuz[cantidadMaximaLuces];
+            uniform vec3 deacimientoDistancia[cantidadMaximaLuces];
+            uniform vec3 colorLuz[cantidadMaximaLuces];
+            uniform float exponenteAngulo[cantidadMaximaLuces];
+            uniform float cosAngMax[cantidadMaximaLuces];
+            uniform bool esDirectiva[cantidadMaximaLuces];
+
+            uniform bool luzActiva[cantidadMaximaLuces];
+
+            // color del objeto
+            uniform vec3 colorAmbiente;
+            uniform vec3 colorDifuso;
+            uniform vec3 colorEspecular;
+            uniform vec3 factoresLuminosidad;
+
+            uniform float glossiness;
+
+            uniform vec3 camara;
+
+            // texturas
+            uniform sampler2D textura[2];
+            uniform vec4 parametosUV[2];
+
+            varying vec2 vUv;
+            varying float w;
+
+            void main(void) {
+
+                vec3 colorFinal = max(vec3(0.0,0.0,0.0),factoresLuminosidad[0]*colorAmbiente);
+                //const int valorLoop = cantidadLuces;
+                for(int i = 0; i < cantidadMaximaLuces ; i++)
+                {
+                    if(luzActiva[i])
+                    {
+                        // obteniendo rayo incidente 
+                        vec3 direccionOptimaLuz = normalize(direccionLuz[i]);
+                        vec3 direccionRealLuz = vPosWorld-posLuz[i];
+                        if(esDirectiva[i])
+                        {
+                            direccionRealLuz = direccionLuz[i];
+                        }
+                        direccionRealLuz = normalize(direccionRealLuz);
+                        float distancia = length(vPosWorld-posLuz[i]);
+                        float coeficienteIntensidad = (dot(direccionOptimaLuz,direccionRealLuz)-cosAngMax[i]);
+                        coeficienteIntensidad = coeficienteIntensidad/(1.0-cosAngMax[i]);
+                        coeficienteIntensidad = max(coeficienteIntensidad,0.0);
+                        coeficienteIntensidad = pow(coeficienteIntensidad,exponenteAngulo[i]);
+                        //coeficienteIntensidad = ceil(coeficienteIntensidad);
+                        coeficienteIntensidad = coeficienteIntensidad/(distancia*distancia*deacimientoDistancia[i].x+distancia*deacimientoDistancia[i].y+deacimientoDistancia[i].z);
+                        vec3 colorLuzAplicado = coeficienteIntensidad*colorLuz[i];
+        
+                        // aplicando luz a la superficie
+        
+                        float cosBeta  = dot(-direccionRealLuz,vNormal);
+                        float cosTita = (cosBeta +abs(cosBeta))/2.0;
+                        vec3 vectorReflejado = ceil(cosTita)*reflect(direccionRealLuz,vNormal);
+                        float cosPhi = dot(camara,vectorReflejado);
+                        cosPhi = (cosPhi+abs(cosPhi))/2.0;
+                        float rS = pow(cosPhi,glossiness);      
+                        
+                        colorFinal = max(colorFinal,factoresLuminosidad[2]*rS*(colorEspecular*colorLuzAplicado));
+                        colorFinal = max(colorFinal,factoresLuminosidad[1]*cosBeta*(colorDifuso*colorLuzAplicado));
+                    }
+                }
+                
+                gl_FragColor = vec4(colorFinal,1.0);
+                //gl_FragColor = vec4(vNormal,1.0); 
             }
         </script>
         
@@ -804,16 +874,32 @@
                     this.coficientesDistancia = vec3.fromValues(0.0,0.0,1.0);
                     this.decaimientoAngulo = 0.0001;
                     this.color = vec3.fromValues(1.0,1.0,1.0);
+                    this.fuenteDirecta = false;
                 }
 
                 dibujar(matrizVista = null, matrizPadre = null)
                 {
+                    if(matrizPadre)
+                        mat4.getTranslation(this.centro, matrizPadre);
+                }
+
+                aplicarLuz(indice)
+                {
+                    var posLuz  = gl.getUniformLocation(glProgram, sprintf("%s[%d]","posLuz",indice));
+                    var direccionLuz = gl.getUniformLocation(glProgram, sprintf("%s[%d]","direccionLuz",indice));
+                    var deacimientoDistancia  = gl.getUniformLocation(glProgram, sprintf("%s[%d]","deacimientoDistancia",indice));
+                    var colorLuz  = gl.getUniformLocation(glProgram, sprintf("%s[%d]","colorLuz",indice));
+                    var cosAngMax  = gl.getUniformLocation(glProgram, sprintf("%s[%d]","cosAngMax",indice));
+                    var exponenteAngulo  = gl.getUniformLocation(glProgram, sprintf("%s[%d]","exponenteAngulo",indice));
+                    var esDirectiva  = gl.getUniformLocation(glProgram, sprintf("%s[%d]","esDirectiva",indice));
+                    /*
                     var posLuz  = gl.getUniformLocation(glProgram, "posLuz");
                     var direccionLuz = gl.getUniformLocation(glProgram, "direccionLuz");
                     var deacimientoDistancia  = gl.getUniformLocation(glProgram, "deacimientoDistancia");
                     var colorLuz  = gl.getUniformLocation(glProgram, "colorLuz");
                     var cosAngMax  = gl.getUniformLocation(glProgram, "cosAngMax");
                     var exponenteAngulo  = gl.getUniformLocation(glProgram, "exponenteAngulo");
+                    */
 
                     gl.uniform3fv(posLuz, this.centro);
                     gl.uniform3fv(direccionLuz, this.direccion);
@@ -821,6 +907,7 @@
                     gl.uniform3fv(colorLuz, this.color);
                     gl.uniform1f(cosAngMax,this.cosAngulomaximo);
                     gl.uniform1f(exponenteAngulo, this.decaimientoAngulo);
+                    gl.uniform1i(esDirectiva, this.fuenteDirecta);
                 }
 
                 setCentro(x,y,z)
@@ -865,9 +952,50 @@
                     vec3.set(this.color,r,g,b);
                 }
 
-                
+                setDirectividad(esDirectivo)
+                {
+                    this.fuenteDirecta = esDirectivo;
+                }
+             
             } 
 
+            class Luces
+            {
+                constructor()
+                {
+                    this.luces = [];
+                    this.cantidadLuces = 0;
+                    this.luzActiva = [];
+                }
+
+                agregarFuenteLuz(fuente)
+                {
+                    this.luces.push(fuente);
+                    this.cantidadLuces ++;
+                    this.luzActiva.push(true);
+                }
+
+                dibujarLuces()
+                {
+                    for(var i = 0; i < this.cantidadLuces; i++)
+                    {
+                        this.luces[i].aplicarLuz(i);
+                        gl.uniform1i(gl.getUniformLocation(glProgram, sprintf("%s[%d]","luzActiva",i)), this.luzActiva[i]);
+                    }
+                }
+
+                quitarFuenteLuz(fuente)
+                {
+                    var indice = this.luces.indexOf(fuente);
+                    if (indice != -1)
+                    {
+                        this.luces.splice(indice,1);
+                    }
+                    this.cantidadLuces--;
+                    this.luzActiva.pop();
+                }
+
+            }
             // mis variables globales
 
             // variables
@@ -889,6 +1017,10 @@
             var ruedaMouse;
 
             var cambiarPrograma = true;
+
+            // luces
+
+            var luces = new Luces();
 
 
             function initWebGL(){
@@ -944,21 +1076,23 @@
                     
             function initShaders() {
                 //get shader source
-                var fs_source = document.getElementById('shader-fs').innerHTML,
-                    fs_source2 = document.getElementById('shader-fs2').innerHTML,
-                    vs_source = document.getElementById('shader-vs').innerHTML;
+                var fs_source = document.getElementById('shader-fs').innerHTML;
+                var fs_source2 = document.getElementById('shader-fs2').innerHTML;
+                var fs_source3 = document.getElementById('shader-fs3').innerHTML;
+                var vs_source = document.getElementById('shader-vs').innerHTML;
 
                 //compile shaders    
                 vertexShader.push(makeShader(vs_source, gl.VERTEX_SHADER));
                 fragmentShader.push(makeShader(fs_source, gl.FRAGMENT_SHADER));
                 fragmentShader.push(makeShader(fs_source2, gl.FRAGMENT_SHADER));
+                fragmentShader.push(makeShader(fs_source3, gl.FRAGMENT_SHADER));
                 
                 //create program
                 glProgram = gl.createProgram();
 
                 //attach and link shaders to the program
                 gl.attachShader(glProgram, vertexShader[0]);
-                gl.attachShader(glProgram, fragmentShader[1]);
+                gl.attachShader(glProgram, fragmentShader[2]);
                 gl.linkProgram(glProgram);
 
                 if (!gl.getProgramParameter(glProgram, gl.LINK_STATUS)) {
@@ -2097,7 +2231,35 @@
                 gl.bindTexture(gl.TEXTURE_2D, null);
             }
 
+            // luces
 
+            
+            function sprintf() {
+                var args = arguments,
+                string = args[0],
+                i = 1;
+                return string.replace(/%((%)|s|d)/g, function (m) {
+                    // m is the matched format, e.g. %s, %d
+                    var val = null;
+                    if (m[2]) {
+                        val = m[2];
+                    } else {
+                        val = args[i];
+                        // A switch statement so that the formatter can be extended. Default is %s
+                        switch (m) {
+                            case '%d':
+                                val = parseFloat(val);
+                                if (isNaN(val)) {
+                                    val = 0;
+                                }
+                                break;
+                        }
+                        i++;
+                    }
+                    return val;
+                });
+            }
+            
             function inicializarObjetos()
             {
                 objetos3D = new Objeto3D();
@@ -2129,7 +2291,7 @@
 
                 /*
                 var hijo = new Objeto3D();
-                hijo.setPosicion(-0.4,0.0,-0.4);
+                hijo.setPosicion(0.0,0.0,-2.0);
                 hijo.setGeometria(generarPrisma(0.2,0.2,0.2));
                 hijo.setColor(color);
                 objetos3D.agregarHijo(hijo);
@@ -2138,15 +2300,29 @@
                 camaraElegida.cargarVectorCamara();
 
                 var fuenteLuz = new FuenteLuz();
-                fuenteLuz.setCentro(0.0,0.0,0.3);
-                fuenteLuz.setDireccion(0.0,0.0,1.0);
-                //fuenteLuz.setColor(1.0,1.0,0.0);
-                //fuenteLuz.setAnguloMaximo(30);
+                fuenteLuz.setCentro(1.0,0.0,1.0);
+                fuenteLuz.setDireccion(-1.0,0.0,-1.0);
+                fuenteLuz.setColor(1.0,1.0,1.0);
+                fuenteLuz.setAnguloMaximo(45);
                 //fuenteLuz.setDecaiminetoAngulo(1);
-                fuenteLuz.dibujar();
+                //fuenteLuz.aplicarLuz(0);
+                //fuenteLuz.setCoeficienteDistacia(0.0,0.0,1.0)
+                //fuenteLuz.setDirectividad(true);
+                luces.agregarFuenteLuz(fuenteLuz);
 
+                fuenteLuz = new FuenteLuz();
+                fuenteLuz.setCentro(0.3,0.0,0.0);
+                fuenteLuz.setDireccion(-1.0,0.0,0.0);
+                fuenteLuz.setColor(0.0,0.0,0.0);
+                luces.agregarFuenteLuz(fuenteLuz);
 
+                fuenteLuz = new FuenteLuz();
+                fuenteLuz.setCentro(-0.3,0.0,0.0);
+                fuenteLuz.setDireccion(1.0,0.0,0.0);
+                fuenteLuz.setColor(0.0,0.0,0.0);
+                luces.agregarFuenteLuz(fuenteLuz);
 
+                luces.dibujarLuces();
             }
 
             /*
