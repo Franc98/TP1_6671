@@ -1045,7 +1045,7 @@
                     }
                     else 
                     {
-                        return bezierRecursivo(puntosNuevos, u, grado-1);
+                        return this.bezierRecursivo(puntosNuevos, u, grado-1);
                     }
                     
                 }
@@ -2350,7 +2350,7 @@
 
                 //attach and link shaders to the program
                 gl.attachShader(glProgram, vertexShader[0]);
-                gl.attachShader(glProgram, fragmentShader[1]);
+                gl.attachShader(glProgram, fragmentShader[2]);
                 gl.linkProgram(glProgram);
 
                 if (!gl.getProgramParameter(glProgram, gl.LINK_STATUS)) {
@@ -2466,8 +2466,8 @@
                 var hijo = new Objeto3D();
                 //hijo.setPosicion(0.0,0.0,-0.1);
                 //hijo.setRotacion(1.0,0,0.0,-Math.PI/2);
-                var cuerpo = new Esfera(0.2);
-                //var cuerpo = new Prisma(0.2,0.2,0.2)
+                //var cuerpo = new Esfera(0.2);
+                var cuerpo = new Prisma(0.2,0.2,0.2);
                 //var cuerpo = new Cilindro(0.2,1.0,50,4);
                 hijo.setGeometria(cuerpo.crearSuperficieBarrido());
                 //hijo.setGeometria(cuerpo.crearSuperficieRevolucion());
@@ -2479,7 +2479,8 @@
                 /*
                 var hijo = new Objeto3D();
                 hijo.setPosicion(0.0,0.0,-2.0);
-                hijo.setGeometria(generarPrisma(0.2,0.2,0.2));
+                cuerpo = new Esfera(0.2);
+                hijo.setGeometria(cuerpo.crearSuperficieBarrido());
                 hijo.setColor(color);
                 objetos3D.agregarHijo(hijo);
                 */
