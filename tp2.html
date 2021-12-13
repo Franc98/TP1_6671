@@ -30,12 +30,11 @@
         <script src="js/jquery.js"></script>
         <script src="js/dat.gui.js"></script>
         
-        <script id="shader-vs" type="x-shader/x-vertex">
-
-            precision highp float;
+        <script id="shader-vs1" type="x-shader/x-vertex">
 
             attribute vec3 aVertexPosition;
             attribute vec3 aVertexNormal;
+            attribute vec3 aVertexUV;
 
             uniform mat4 modelMatrix;            
             uniform mat4 viewMatrix;
@@ -44,7 +43,10 @@
             uniform mat4 normalMatrix;
 
             varying vec3 vNormal;    
-            varying vec3 vPosWorld;  
+            varying vec3 vPosWorld;
+
+            varying vec2 vUv;
+            varying float w;
 
             void main(void) {
                 gl_Position = projMatrix * viewMatrix * modelMatrix * vec4(aVertexPosition, 1.0);
@@ -90,7 +92,7 @@
         </script>
 
 
-        <script id="shader-fs" type="x-shader/x-fragment">
+        <script id="shader-fs1" type="x-shader/x-fragment">
             precision highp float;
             varying vec3 vNormal;
             varying vec3 vPosWorld;
@@ -114,6 +116,20 @@
             varying vec3 vNormal;
             varying vec3 vPosWorld;
 
+            // para luces puntuales
+            const int cantidadMaximaLuces = 10;
+
+            uniform vec3 posLuz[cantidadMaximaLuces];
+            uniform vec3 direccionLuz[cantidadMaximaLuces];
+            uniform vec3 deacimientoDistancia[cantidadMaximaLuces];
+            uniform vec3 colorLuz[cantidadMaximaLuces];
+            uniform float exponenteAngulo[cantidadMaximaLuces];
+            uniform float cosAngMax[cantidadMaximaLuces];
+            uniform bool esDirectiva[cantidadMaximaLuces];
+
+            uniform bool luzActiva[cantidadMaximaLuces];
+
+            // color del objeto
             uniform vec3 colorAmbiente;
             uniform vec3 colorDifuso;
             uniform vec3 colorEspecular;
@@ -123,6 +139,7 @@
 
             uniform vec3 camara;
 
+            // texturas
             uniform sampler2D textura[2];
             uniform vec4 parametosUV[2];
 
@@ -131,7 +148,7 @@
 
             void main(void) {
 
-                vec4 color = vec4(1.0,0.0,0.0, 1.0); 
+                //vec3 color = vec4(1.0,0.0,0.0); 
                 vec4 texColor;
                 vec2 uvAux;
     
@@ -145,13 +162,60 @@
                     uvAux = vec2(parametosUV[1][0]+vUv.x*parametosUV[1][1],parametosUV[1][2]+vUv.y*parametosUV[1][3]);
                     texColor=texture2D(textura[1], uvAux);
                 }
-                 
-                 color.x=texColor.x;
-                 color.y=texColor.y;
-                 color.z=texColor.z;
-         
-         
-                gl_FragColor = color;
+                
+                vec3 colorAmbienteUsado = vec3(texColor.x,texColor.y,texColor.z);
+                vec3 colorDifusoUsado = vec3(texColor.x,texColor.y,texColor.z);
+                //gl_FragColor = colorDifusoUsado;
+
+                vec3 colorFinal = vec3(0.0,0.0,0.0);
+                //const int valorLoop = cantidadLuces;
+                vec3 colorDifusoFinal = vec3(0.0,0.0,0.0);
+                vec3 colorEspecularFinal = vec3(0.0,0.0,0.0);
+                for(int i = 0; i < cantidadMaximaLuces ; i++)
+                {
+                    if(luzActiva[i])
+                    {
+                        // obteniendo rayo incidente 
+                        vec3 direccionOptimaLuz = normalize(direccionLuz[i]);
+                        vec3 direccionRealLuz = vPosWorld-posLuz[i];
+                        if(esDirectiva[i])
+                        {
+                            direccionRealLuz = direccionLuz[i];
+                        }
+                        direccionRealLuz = normalize(direccionRealLuz);
+                        float distancia = length(vPosWorld-posLuz[i]);
+                        float coeficienteIntensidad = (dot(direccionOptimaLuz,direccionRealLuz)-cosAngMax[i]);
+                        coeficienteIntensidad = coeficienteIntensidad/(1.0-cosAngMax[i]);
+                        coeficienteIntensidad = max(coeficienteIntensidad,0.0);
+                        coeficienteIntensidad = pow(coeficienteIntensidad,exponenteAngulo[i]);
+                        //coeficienteIntensidad = ceil(coeficienteIntensidad);
+                        coeficienteIntensidad = coeficienteIntensidad/(distancia*distancia*deacimientoDistancia[i].x+distancia*deacimientoDistancia[i].y+deacimientoDistancia[i].z);
+                        vec3 colorLuzAplicado = coeficienteIntensidad*colorLuz[i];
+        
+                        // aplicando luz a la superficie
+        
+                        float cosBeta  = dot(-direccionRealLuz,vNormal);
+                        float cosTita = (cosBeta +abs(cosBeta))/2.0;
+                        vec3 vectorReflejado = ceil(cosTita)*reflect(direccionRealLuz,vNormal);
+                        float cosPhi = dot(camara,vectorReflejado);
+                        cosPhi = (cosPhi+abs(cosPhi))/2.0;
+                        float rS = pow(cosPhi,glossiness);      
+                        
+                        colorEspecularFinal = colorEspecularFinal+factoresLuminosidad[2]*rS*(colorEspecular*colorLuzAplicado);
+                        colorDifusoFinal = colorDifusoFinal+factoresLuminosidad[1]*cosTita*(colorDifusoUsado*colorLuzAplicado);
+                    }
+                }
+                colorEspecularFinal = min(colorEspecularFinal,factoresLuminosidad[2]*colorEspecular);
+                colorDifusoFinal = min(colorDifusoFinal,factoresLuminosidad[1]*colorDifusoUsado);
+                colorFinal = max(colorFinal,factoresLuminosidad[0]*colorAmbienteUsado);
+                colorFinal = max(colorFinal,colorEspecularFinal);
+                colorFinal = max(colorFinal,colorDifusoFinal);
+                colorFinal = min(vec3(1.0,1.0,1.0),colorFinal);
+                
+                gl_FragColor = vec4(colorFinal,1.0);
+                //gl_FragColor = vec4(colorDifusoUsado,1.0);
+                //gl_FragColor = texColor;
+                //gl_FragColor = vec4(vNormal,1.0);
          
             }
         </script>
@@ -193,8 +257,10 @@
 
             void main(void) {
 
-                vec3 colorFinal = max(vec3(0.0,0.0,0.0),factoresLuminosidad[0]*colorAmbiente);
+                vec3 colorFinal = vec3(0.0,0.0,0.0);
                 //const int valorLoop = cantidadLuces;
+                vec3 colorDifusoFinal = vec3(0.0,0.0,0.0);
+                vec3 colorEspecularFinal = vec3(0.0,0.0,0.0);
                 for(int i = 0; i < cantidadMaximaLuces ; i++)
                 {
                     if(luzActiva[i])
@@ -225,10 +291,16 @@
                         cosPhi = (cosPhi+abs(cosPhi))/2.0;
                         float rS = pow(cosPhi,glossiness);      
                         
-                        colorFinal = max(colorFinal,factoresLuminosidad[2]*rS*(colorEspecular*colorLuzAplicado));
-                        colorFinal = max(colorFinal,factoresLuminosidad[1]*cosBeta*(colorDifuso*colorLuzAplicado));
+                        colorEspecularFinal = colorEspecularFinal+factoresLuminosidad[2]*rS*(colorEspecular*colorLuzAplicado);
+                        colorDifusoFinal = colorDifusoFinal+factoresLuminosidad[1]*cosTita*(colorDifuso*colorLuzAplicado);
                     }
                 }
+                colorEspecularFinal = min(colorEspecularFinal,colorEspecular);
+                colorDifusoFinal = min(colorDifusoFinal,colorDifuso);
+                colorFinal = max(colorFinal,factoresLuminosidad[0]*colorAmbiente);
+                colorFinal = max(colorFinal,colorEspecularFinal);
+                colorFinal = max(colorFinal,colorDifusoFinal);
+                colorFinal = min(vec3(1.0,1.0,1.0),colorFinal);
                 
                 gl_FragColor = vec4(colorFinal,1.0);
                 //gl_FragColor = vec4(vNormal,1.0); 
@@ -246,12 +318,15 @@
             canvas = null,
 
             glProgram = null,
-            fragmentShader = null,
-            vertexShader = null;
+            fragmentShader = [],
+            vertexShader = [];
+            const cantFS = 3;
+            const cantVS = 2;
                 
             var vertexPositionAttribute = null,
             trianglesVerticeBuffer = null,
             vertexNormalAttribute = null,
+            vertexUVAttribute = null,
             trianglesNormalBuffer = null,
             trianglesIndexBuffer = null;
                
@@ -277,10 +352,10 @@
                     this.matrizNormal = mat4.create();
                     // parametros
                     this.posicion =vec3.create();
-                    this.rotacionEje = vec3.create();
+                    this.rotacionEje = vec3.fromValues(1,0,0);
                     this.rotacionAngulo = 0;
                     this.escala = vec3.fromValues(1,1,1);
-                    this.color = vec3.fromValues(0.0,0.2,0.8);
+                    this.color = null;
                     // hijos
                     this.hijos = [];
                 } 
@@ -314,16 +389,15 @@
 
                     this.actualizarMatrizNormal(matrizVista, m);
 
-                    if(this.vertexBuffer && this.indexBuffer)
+                    if(this.vertexBuffer && this.indexBuffer && this.color)
                     {
+                    this.color.aplicar();
                     // setear matrices modelado y normales
                     var modelMatrixUniform = gl.getUniformLocation(glProgram, "modelMatrix");
                     var normalMatrixUniform  = gl.getUniformLocation(glProgram, "normalMatrix");
-                    var colorDifusoUniform  = gl.getUniformLocation(glProgram, "colorDifuso");
 
                     gl.uniformMatrix4fv(modelMatrixUniform, false, m);
                     gl.uniformMatrix4fv(normalMatrixUniform, false, this.matrizNormal);
-                    gl.uniform3fv(colorDifusoUniform, this.color);
 
                     //setear buffers    
                     vertexPositionAttribute = gl.getAttribLocation(glProgram, "aVertexPosition");
@@ -335,6 +409,11 @@
                     gl.enableVertexAttribArray(vertexNormalAttribute);
                     gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
                     gl.vertexAttribPointer(vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
+
+                    vertexUVAttribute = gl.getAttribLocation(glProgram, "aVertexUV");
+                    gl.enableVertexAttribArray(vertexUVAttribute);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, this.uVBuffer);
+                    gl.vertexAttribPointer(vertexUVAttribute, 3, gl.FLOAT, false, 0, 0);
 
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
                     gl.drawElements( gl.TRIANGLE_STRIP, this.indexBuffer.number_vertex_point, gl.UNSIGNED_SHORT, 0);
@@ -387,9 +466,9 @@
                     this.rotacionAngulo = alfa;
                 }
                 
-                setColor(r,g,b)
+                setColor(colorObjeto)
                 {
-                    vec3.set(this.color,r,g,b);
+                    this.color = colorObjeto;
                 }
                 
                 setEscala (x,y,z) 
@@ -404,6 +483,7 @@
                 {
                     //buffers
                     this.radio = 1;
+                    //this.phi = -Math.PI/4;
                     this.phi = 0;
                     this.theta = Math.PI/2;
                     this.thetaMin = 0+0.00001;
@@ -411,6 +491,8 @@
                     this.matrizVista = mat4.create();
                     this.centro = vec3.create();
                     this.up = vec3.fromValues(0,1,0);
+
+                    this.vecCamara = vec3.fromValues(0,0,1);
 
                 } 
                 // metodos privados
@@ -468,6 +550,15 @@
                     vec3.transformMat4(centroCamara,centroCamara,matrizPadre);
                     //vec3.add(centroCamara,centroCamara,this.centro)
                     mat4.lookAt(this.matrizVista,centroCamara,this.centro,this.up);
+
+                    vec3.subtract(this.vecCamara,centroCamara,this.centro)
+                    vec3.normalize(this.vecCamara,this.vecCamara);
+                }
+
+                cargarVectorCamara()
+                {
+                    var vecCamaraUniform  = gl.getUniformLocation(glProgram, "camara");
+                    gl.uniform3fv(vecCamaraUniform , this.vecCamara);
                 }
             }
             
@@ -673,7 +764,7 @@
                 }
                 
             }
-            
+ 
             // iluminacion y color
             class Color
             {
@@ -684,7 +775,9 @@
                     this.programa = null;
                     this.texturasFigura = [];
                     this.texturaReflexion = [];
-                    this.parametrosUV = []
+                    this.parametrosUV = [];
+                    this.luces = null
+                    this.cantidadTexturas = 0;
 
                     // color
                     this.colorAmbiente = vec3.create();
@@ -698,15 +791,24 @@
                 }
 
                 // Métodos Privados
-
+                agregarTextura(srcimagen)
+                {
+                    this.texturasFigura.push(cearTextura(srcimagen));
+                }
+                
+                agregarParametrosUV(inicioU = 0.0,escaladoU = 1.0,inicioV = 0.0,escaladoV = 1.0)
+                {
+                    this.parametrosUV.push(vec4.fromValues(inicioU,escaladoU,inicioV,escaladoV));
+                }
                 // Métodos Públicos
 
                 aplicar()
                 {
-                    if(this.program)
+                    if(this.programa != null)
                     {
-                        glProgram = this.program;
+                        glProgram = this.programa;
                         linkearPrograma(glProgram);
+                        //console.log("cambiaPrograma");
                     }
                     var colorAmbienteUniform  = gl.getUniformLocation(glProgram, "colorAmbiente");
                     var colorDifusoUniform = gl.getUniformLocation(glProgram, "colorDifuso");
@@ -720,6 +822,16 @@
                     gl.uniform3fv(factoresLuminosidadUniform, this.factoresLuminosidad);
                     gl.uniform1f(glossinessUniform,this.glossiness);
 
+                    for(var i = 0; i < this.cantidadTexturas; i++)
+                    {
+                        gl.activeTexture(this.glTexturasFigura[i]);
+                        gl.bindTexture(gl.TEXTURE_2D, this.texturasFigura[i]);
+                        gl.uniform1i(gl.getUniformLocation(glProgram, sprintf("textura[%d]",i)), i);
+                        var parametosUV = gl.getUniformLocation(glProgram, sprintf("parametosUV[%d]",i));
+                        gl.uniform4fv(parametosUV , this.parametrosUV[i]);
+                    }
+
+                    /*
                     gl.activeTexture(gl.TEXTURE0);
                     gl.bindTexture(gl.TEXTURE_2D, this.texturasFigura[0]);
                     gl.uniform1i(gl.getUniformLocation(glProgram, 'textura[0]'), 0);
@@ -732,6 +844,7 @@
 
                     gl.uniform4fv(parametosUV1, this.parametrosUV[0]);
                     gl.uniform4fv(parametosUV2 , this.parametrosUV[1]);
+                    */
                 }
 
                 setColorAmbiente(r,g,b)
@@ -762,35 +875,26 @@
                 setVertexShader(vertexShader)
                 {
                     this.vertexShader = vertexShader;
-                    if(this.fragmentShader)
+                    if(this.fragmentShader != null)
                     {
-                        this.programa = linkearShaders(this.vertexShader, this.fragmentShader)
+                        this.programa = linkearShaders(this.vertexShader, this.fragmentShader);
                     }
                 }
                 
                 setFragmentShader(fragmentShader)
                 {
                     this.fragmentShader = fragmentShader;
-                    if(this.vertexShader)
+                    if(this.vertexShader != null)
                     {
-                        this.programa = linkearShaders(this.vertexShader, this.fragmentShader)
+                        this.programa = linkearShaders(this.vertexShader, this.fragmentShader);
                     }
-                }
-
-                agregarTextura(srcimagen)
-                {
-                    this.texturasFigura.push(cearTextura(srcimagen));
-                }
-                
-                agregarParametrosUV(inicioU = 0.0,escaladoU = 1.0,inicioV = 0.0,escaladoV = 1.0)
-                {
-                    this.parametrosUV.push(vec4.fromValues(inicioU,escaladoU,inicioV,escaladoV));
                 }
 
                 agregarTexturaConParametrosUV(srcimagen,inicioU = 0.0,escaladoU = 1.0,inicioV = 0.0,escaladoV = 1.0)
                 {
                     this.agregarTextura(srcimagen);
                     this.agregarParametrosUV(inicioU,escaladoU,inicioV,escaladoV);
+                    this.cantidadTexturas++;
                 }
             }
 
@@ -800,17 +904,33 @@
                 {
                     this.centro = vec3.create();
                     this.direccion = vec3.fromValues(1.0,1.0,1.0);
+                    this.direccionOriginal = vec3.fromValues(1.0,1.0,1.0);
                     this.cosAngulomaximo = -1;
                     this.coficientesDistancia = vec3.fromValues(0.0,0.0,1.0);
                     this.decaimientoAngulo = 0.0001;
                     this.color = vec3.fromValues(1.0,1.0,1.0);
                     this.fuenteDirecta = false;
                 }
+                // métodos privados
+                modificarPosicion(matrizPadre)
+                {
+                    //vec3.transformMat4(this.centro,this.centro,matrizPadre);
+                    mat4.getTranslation(this.centro,matrizPadre);
+                    var matrizNormal = mat4.clone(matrizPadre);
+                    mat4.invert(matrizNormal,matrizNormal);
+                    mat4.transpose(matrizNormal,matrizNormal);
+                    var normal = vec4.fromValues(this.direccionOriginal[0],this.direccionOriginal[1],this.direccionOriginal[2],1.0);
+                    vec4.transformMat4(normal,normal,matrizNormal);
+                    vec3.set(this.direccion,normal[0],normal[1],normal[2]);
+                    vec3.normalize(this.direccion,this.direccion);
+                }
+
+                // Métodos Públicos
 
                 dibujar(matrizVista = null, matrizPadre = null)
                 {
                     if(matrizPadre)
-                        mat4.getTranslation(this.centro, matrizPadre);
+                        this.modificarPosicion(matrizPadre);
                 }
 
                 aplicarLuz(indice)
@@ -848,6 +968,7 @@
                 setDireccion(x,y,z)
                 {
                     vec3.set(this.direccion,x,y,z);
+                    vec3.set(this.direccionOriginal,x,y,z);
                 }
 
                 setAnguloMaximo(anguloEnGrados)
@@ -2241,6 +2362,9 @@
             const DELTA_ROTACION = 0.02;         // velocidad de rotacion
             const FACTOR_INERCIA = 0.01;
 
+            // luces
+            var luces = new Luces();
+
             function initWebGL(){
 
                 canvas = document.getElementById("my-canvas");  
@@ -2277,7 +2401,7 @@
 
                 // Matrix de Proyeccion Perspectiva
 
-                mat4.perspective(projMatrix,45, canvas.width / canvas.height, 0.1, 100.0);
+                mat4.perspective(projMatrix,45, canvas.width / canvas.height, 0.1, 500.0);
                 
                 mat4.identity(modelMatrix);
                 mat4.rotate(modelMatrix,modelMatrix, -1.57078, [1.0, 0.0, 0.0]);
@@ -2294,19 +2418,32 @@
                     
             function initShaders() {
                 //get shader source
-                var fs_source = document.getElementById('shader-fs').innerHTML,
-                    vs_source = document.getElementById('shader-vs').innerHTML;
+                var indiceFS = 2;
+                var indiceVS = 1;
+
+                var fs_source =  [];
+                var vs_source = [];
+                fs_source.push(document.getElementById('shader-fs1').innerHTML);
+                fs_source.push(document.getElementById('shader-fs2').innerHTML);
+                fs_source.push(document.getElementById('shader-fs3').innerHTML);
+                    
+                vs_source.push(document.getElementById('shader-vs1').innerHTML);
+                vs_source.push(document.getElementById('shader-vs2').innerHTML);
+
 
                 //compile shaders    
-                vertexShader = makeShader(vs_source, gl.VERTEX_SHADER);
-                fragmentShader = makeShader(fs_source, gl.FRAGMENT_SHADER);
+                vertexShader.push(makeShader(vs_source[0], gl.VERTEX_SHADER));
+                vertexShader.push(makeShader(vs_source[1], gl.VERTEX_SHADER));
+                fragmentShader.push(makeShader(fs_source[0], gl.FRAGMENT_SHADER));
+                fragmentShader.push(makeShader(fs_source[1], gl.FRAGMENT_SHADER));
+                fragmentShader.push(makeShader(fs_source[2], gl.FRAGMENT_SHADER));
                 
                 //create program
                 glProgram = gl.createProgram();
                 
                 //attach and link shaders to the program
-                gl.attachShader(glProgram, vertexShader);
-                gl.attachShader(glProgram, fragmentShader);
+                gl.attachShader(glProgram, vertexShader[indiceVS]);
+                gl.attachShader(glProgram, fragmentShader[indiceFS]);
                 gl.linkProgram(glProgram);
 
                 if (!gl.getProgramParameter(glProgram, gl.LINK_STATUS)) {
@@ -2317,6 +2454,28 @@
                 gl.useProgram(glProgram);
             }
             
+            function linkearShaders(vertexShader, fragmentShader)
+            {
+                var glProgram2 = gl.createProgram();
+                //attach and link shaders to the program
+                gl.attachShader(glProgram2, vertexShader);
+                gl.attachShader(glProgram2, fragmentShader);
+                gl.linkProgram(glProgram2);
+                if (!gl.getProgramParameter(glProgram2, gl.LINK_STATUS)) {
+                    alert("Unable to initialize the shader program.");
+                }
+                
+                return glProgram2;                
+            }
+
+            function linkearPrograma(glProgram2)
+            {
+                gl.useProgram(glProgram2);
+                camaraElegida.cargarVectorCamara();
+                setupVertexShaderMatrix2();
+                luces.dibujarLuces();
+            }
+
             function makeShader(src, type){
                 //compile the vertex shader
                 var shader = gl.createShader(type);
@@ -2329,36 +2488,61 @@
                 return shader;
             }
             
+            
             /*
             *
             *
             */
             // para generar el anillo
 
-            function generarColumaSoporte(bufferBarraLatera,bufferBarraCruzada, longitud, ancho,longitudBarraCruzada,color)
+            function generarColumaSoporte(bufferBarraLatera,bufferBarraCruzada, longitud, ancho,longitudBarraCruzada,perimetrobase)
             {
                 var columaSoporte = new Objeto3D();
                 var objetoAuxiliar = new Objeto3D();
+
+                var relacion = longitud/perimetrobase;
+                var factor = 1/4;
+                //color
+                var color = new Color();
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.3,0.6,1.0);
+                color.setGlossiness(100);
+                color.agregarTexturaConParametrosUV("textures/MetalWeave03_1K_AO.png",0.0,factor,0.0,relacion*factor);
+                color.agregarTexturaConParametrosUV("textures/MetalWeave03_1K_AO.png",0.0,0.0,0.0,0.0);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[1]);
+
                 objetoAuxiliar.setGeometria(bufferBarraLatera);
                 objetoAuxiliar.setPosicion(longitud/2,ancho/2,0);
-                objetoAuxiliar.setColor(color[0],color[1],color[2]);
+                objetoAuxiliar.setColor(color);
                 columaSoporte.agregarHijo(objetoAuxiliar);
                 objetoAuxiliar = new Objeto3D();
                 objetoAuxiliar.setGeometria(bufferBarraLatera);
                 objetoAuxiliar.setPosicion(longitud/2,-ancho/2,0);
-                objetoAuxiliar.setColor(color[0],color[1],color[2]);
+                objetoAuxiliar.setColor(color);
                 columaSoporte.agregarHijo(objetoAuxiliar);
                 var rotacionBarraCruzada = Math.asin(ancho/longitudBarraCruzada);
                 var alturaBarraCruzada = Math.cos(rotacionBarraCruzada)*longitudBarraCruzada;
                 var cantidadBarrasCruzadas = Math.floor(longitud/alturaBarraCruzada);
                 var posicion = (longitud-cantidadBarrasCruzadas*alturaBarraCruzada)/2+alturaBarraCruzada/2;
+
+                relacion = longitudBarraCruzada/perimetrobase;
+                color = new Color();
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.3,0.6,1.0);
+                color.setGlossiness(100);
+                color.agregarTexturaConParametrosUV("textures/MetalWeave03_1K_AO.png",0.0,factor,0.0,relacion*factor);
+                color.agregarTexturaConParametrosUV("textures/MetalWeave03_1K_AO.png",0.0,0.0,0.0,0.0);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[1]);
+
                 for(var i = 0; i < cantidadBarrasCruzadas; i++)
                 {
                     objetoAuxiliar = new Objeto3D();
                     objetoAuxiliar.setGeometria(bufferBarraCruzada);
                     objetoAuxiliar.setPosicion(posicion,0,0);
                     objetoAuxiliar.setRotacion(0,0,1,rotacionBarraCruzada);
-                    objetoAuxiliar.setColor(color[0],color[1],color[2]);
+                    objetoAuxiliar.setColor(color);
                     columaSoporte.agregarHijo(objetoAuxiliar);
                     rotacionBarraCruzada *= -1;
                     posicion += alturaBarraCruzada;
@@ -2423,7 +2607,7 @@
                 return superficie;
             }
 
-            function generarCentroAnillo(radio, ancho, color)
+            function generarCentroAnillo(radio, ancho)
             {
                 const anchoborde = 0.3*ancho;
                 const difRadio = anchoborde;
@@ -2435,13 +2619,23 @@
                 const radioMin = radio-difRadio;
                 const radioMedio = radio-difRadio/2;
 
+                // color
+                var color = new Color();
+                color.setColorAmbiente(1.0,0.5,0.0);
+                color.setColorDifuso(1.0,0.5,0.0);
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.2,0.6,1.0);
+                color.setGlossiness(10);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[2]);
+
                 var objetoAux = new Objeto3D();
                 var cilindro = new Cilindro(radio,ancho,cantPuntosCirculo,cantPuntosRecorrido); 
                 var buffersAux = cilindro.crearSuperficieBarrido();
                 //var buffersAux = generarCilindro(radio,ancho,cantPuntosCirculo,cantPuntosRecorrido);
                 objetoAux.setGeometria(buffersAux);
                 objetoAux.setRotacion(0,1,0,Math.PI/2);
-                objetoAux.setColor(color[0],color[1],color[2]);
+                objetoAux.setColor(color);
                 objeto.agregarHijo(objetoAux);
                 
                 const posTapas = (anchoborde + ancho)/2;
@@ -2461,7 +2655,7 @@
                 objetoAux = new Objeto3D();
                 objetoAux.setGeometria(buffersAux);
                 objetoAux.setPosicion(0,0,-posTapas);
-                objetoAux.setColor(color[0],color[1],color[2]);
+                objetoAux.setColor(color);
                 objeto.agregarHijo(objetoAux);
 
                 superficieAux = new Superficie();
@@ -2473,7 +2667,7 @@
                 objetoAux.setGeometria(buffersAux);
                 objetoAux.setPosicion(0,0,posTapas);
                 objetoAux.setRotacion(0,1,0,Math.PI);
-                objetoAux.setColor(color[0],color[1],color[2]);
+                objetoAux.setColor(color);
                 objeto.agregarHijo(objetoAux);
 
                 
@@ -2487,33 +2681,29 @@
 
                 const radioInterno = factorTamanio*1.5;
                 const anchoCentro = factorTamanio*0.3;
-                const colorCentro = vec3.fromValues(0.5,0.8,0.0);
 
                 // vigas
                 const anchoLateral = factorTamanio*0.1;
                 const radioviga = factorTamanio*0.04;
                 const anchoViga = factorTamanio*0.3;
-                const colorVigas = vec3.fromValues(0.8,0.6,0.7);
                 const cantPuntosCruzado = 20;
                 const largoCrucado = factorTamanio*0.5;
 
                 // anillo externo 
                 const radio = factorTamanio*7.5;
                 const radioAnillo = factorTamanio*0.5;
-                const colorAnillo = vec3.fromValues(0.8,0.8,0.8);
                 const cantPuntosAnilloN = 100;
                 const cantPuntosAnilloR = 200;
 
                 // modulo 
                 const anchoModulo = factorTamanio*1.1;
                 const altoModulo = factorTamanio*3.0;
-                const colorModulo = vec3.fromValues(0.0,0.75,0.75);
                 
                 const cantidadModulos = variablesGUI.cantidadModulos;
 
                 var objeto = new Objeto3D();
 
-                var hijo = generarCentroAnillo(radioInterno,anchoCentro,colorCentro);
+                var hijo = generarCentroAnillo(radioInterno,anchoCentro);
                 //hijo.setRotacion(1,0,0,Math.PI/2);
                 objeto.agregarHijo(hijo);
 
@@ -2527,9 +2717,21 @@
                 superficieAux.setRecorrido(recorrido);
                 var superficie = superficieAux.crearSuperficieBarrido();
                 //var superficie = superficieBarridoCompleta(nivel,recorrido);
+
+                // color
+                var color = new Color();
+                color.setColorAmbiente(1.0,1.0,1.0);
+                color.setColorDifuso(1.0,1.0,1.0);
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.4,0.8,1.0);
+                color.setGlossiness(10);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[2]);
+
+
                 hijo = new Objeto3D();
                 hijo.setGeometria(superficie);
-                hijo.setColor(colorAnillo[0],colorAnillo[1],colorAnillo[2]);
+                hijo.setColor(color);
                 objeto.agregarHijo(hijo);
 
                 var prisma = new Prisma(anchoLateral,anchoLateral,radio);
@@ -2544,14 +2746,24 @@
                 var anguloInicial = 0;
                 var anguloPaso = Math.PI*2/cantidadModulos;
 
+                // color modulo
+                color = new Color();
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.5,1.0,1.0);
+                color.setGlossiness(10);
+                color.agregarTexturaConParametrosUV("maps/modulo.jpg");
+                color.agregarTexturaConParametrosUV("maps/modulo.jpg",0.0,0.0,0.0,0.0);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[1]);
+
                 for(var i = 0; i < cantidadModulos; i++)
                 {
-                    hijo = generarColumaSoporte(superficie,superficie2,radio,anchoViga,largoCrucado,colorVigas);
+                    hijo = generarColumaSoporte(superficie,superficie2,radio,anchoViga,largoCrucado,4*anchoLateral);
                     hijo.setRotacion(0,0,1,anguloInicial);
                     objeto.agregarHijo(hijo);
                     hijo = new Objeto3D();
                     hijo.setGeometria(superficie3);
-                    hijo.setColor(colorModulo[0],colorModulo[1],colorModulo[2]);
+                    hijo.setColor(color);
                     hijo.setRotacion(0,0,1,anguloInicial);
                     objeto.agregarHijo(hijo);
                     anguloInicial += anguloPaso;
@@ -2562,23 +2774,41 @@
 
             // para generar los paneles solares
 
-            function generarParPanelSolar(buffercilindro,bufferpanel, largoPanel, largoCilindro, color)
+            function generarParPanelSolar(buffercilindro,bufferpanel, largoPanel, largoCilindro)
             {
+                var color = new Color();
+                color.setColorAmbiente(1.0,0.5,0.0);
+                color.setColorDifuso(1.0,0.5,0.0);
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.2,0.4,1.0);
+                color.setGlossiness(10);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[2]);
+
                 var objeto = new Objeto3D();
                 var hijo = new Objeto3D();
                 hijo.setGeometria(buffercilindro);
-                hijo.setColor(color[0],color[1],color[2]);
+                hijo.setColor(color);
                 objeto.agregarHijo(hijo);
+
+                color = new Color();
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.5,1.0,1.0);
+                color.setGlossiness(10);
+                color.agregarTexturaConParametrosUV("maps/paneles_solares.jpg",0.0357);
+                color.agregarTexturaConParametrosUV("maps/paneles_solares.jpg",0.0,0.0,0.0,0.0);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[1]);
 
                 hijo = new Objeto3D();
                 hijo.setGeometria(bufferpanel);
-                hijo.setColor(color[0],color[1],color[2]);
+                hijo.setColor(color);
                 hijo.setPosicion(-(largoPanel+largoCilindro)/2,0.0,0.0);
                 objeto.agregarHijo(hijo);
 
                 hijo = new Objeto3D();
                 hijo.setGeometria(bufferpanel);
-                hijo.setColor(color[0],color[1],color[2]);
+                hijo.setColor(color);
                 hijo.setPosicion((largoPanel+largoCilindro)/2,0.0,0.0);
                 objeto.agregarHijo(hijo);
 
@@ -2612,6 +2842,15 @@
 
                 const centroPaneles = largoOriginal+largoPanel*cantidadFilasPaneles/2;
 
+                var color = new Color();
+                color.setColorAmbiente(1.0,0.5,0.0);
+                color.setColorDifuso(1.0,0.5,0.0);
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.2,0.4,1.0);
+                color.setGlossiness(10);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[2]);
+
                 var objeto = new Objeto3D();
                 var hijo = new Objeto3D();
                 
@@ -2619,7 +2858,7 @@
                 var superficie1 = cilindro.crearSuperficieBarrido();
                 //var superficie1 = generarCilindro(radioCentral,largoOriginal+largoPanel*cantidadFilasPaneles); 
                 hijo.setGeometria(superficie1);
-                hijo.setColor(colorBarra[0],colorBarra[1],colorBarra[2]);
+                hijo.setColor(color);
                 hijo.setRotacion(0,0,1,Math.PI/2);
                 hijo.setPosicion(0.0,-(largoOriginal+largoPanel*cantidadFilasPaneles)/2,0.0);
                 objeto.agregarHijo(hijo);
@@ -2634,7 +2873,7 @@
                 //var superficie2 = generarCilindro(radioBarra,largoBarra);
                 for(var i = 0; i<cantidadFilasPaneles;i++)
                 {
-                    var hijo = generarParPanelSolar(superficie2,superficie1, profundidadPanel, largoBarra, colorPaneles);
+                    var hijo = generarParPanelSolar(superficie2,superficie1, profundidadPanel, largoBarra);
                     hijo.setPosicion(0.0,-posInicial,0.0);
                     objeto.agregarHijo(hijo);
                     punteroPaneles.push(hijo);
@@ -2749,15 +2988,24 @@
                 var superficie = superficieAux.crearSuperficieBarrido();
                 //var superficie = superficieBarridoCompleta(nivel,recorrido);
 
+                var color = new Color();
+                color.setColorAmbiente(1.0,1.0,1.0);
+                color.setColorDifuso(1.0,1.0,1.0);
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.1,0.2,1.0);
+                color.setGlossiness(10);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[2]);
+
                 hijo.setGeometria(superficie);
-                hijo.setColor(colorMB[0],colorMB[1],colorMB[2]);
+                hijo.setColor(color);
                 hijo.setRotacion(0,1,0,Math.PI/2);
                 hijo.setPosicion(0.0,0.0,(largoMCC+profundidadMB)/2);
                 objeto.agregarHijo(hijo);
 
                 hijo = new Objeto3D();
                 hijo.setGeometria(superficie);
-                hijo.setColor(colorMB[0],colorMB[1],colorMB[2]);
+                hijo.setColor(color);
                 hijo.setRotacion(0,1,0,Math.PI/2);
                 hijo.setPosicion(0.0,0.0,-(largoMCC+profundidadMB)/2);
                 objeto.agregarHijo(hijo);
@@ -2776,14 +3024,23 @@
                 superficie = superficieAux.crearSuperficieRevolucion();
                 //superficie = superficieRevolucionCompleta(nivel,recorrido,false,false,false);
 
+                color = new Color();
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.5,1.0,1.0);
+                color.setGlossiness(10);
+                color.agregarTexturaConParametrosUV("maps/modulo-cilindrico.jpg");
+                color.agregarTexturaConParametrosUV("maps/modulo-cilindrico.jpg",0.0,0.0,0.0,0.0);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[1]);
+
                 hijo = new Objeto3D();
                 hijo.setGeometria(superficie);
-                hijo.setColor(colorMCE[0],colorMCE[1],colorMCE[2]);
+                hijo.setColor(color);
                 objeto.agregarHijo(hijo);
                 
                 hijo = new Objeto3D();
                 hijo.setGeometria(superficie);
-                hijo.setColor(colorMCE[0],colorMCE[1],colorMCE[2]);
+                hijo.setColor(color);
                 hijo.setPosicion(0.0,0.0,-(largoMCC+profundidadMB));
                 objeto.agregarHijo(hijo);
 
@@ -2799,9 +3056,18 @@
                 superficie = superficieAux.crearSuperficieRevolucion();
                 //superficie = superficieRevolucionCompleta(nivel,recorrido,invertirNormal);
 
+                color = new Color();
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.5,1.0,1.0);
+                color.setGlossiness(10);
+                color.agregarTexturaConParametrosUV("maps/modulo-esferico.jpg");
+                color.agregarTexturaConParametrosUV("maps/modulo-esferico.jpg",0.0,0.0,0.0,0.0);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[1]);
+
                 hijo = new Objeto3D();
                 hijo.setGeometria(superficie);
-                hijo.setColor(colorMCE[0],colorMCE[1],colorMCE[2]);
+                hijo.setColor(color);
                 hijo.setPosicion(0.0,0.0,(largoMCC+largoMCE)/2+profundidadMB);
                 objeto.agregarHijo(hijo);
                 
@@ -2844,13 +3110,25 @@
             function generarTierra()
             {
                 const radio = 500;
-                const color = vec3.fromValues(0.0,0.8,1.0);
 
-                var objeto = new Objeto3D()
-                var esfera = new Esfera(radio,100,100);
+                var color = new Color();
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(1.0,0.0,0.0);
+                color.setGlossiness(10);
+                color.agregarTexturaConParametrosUV("maps/tierra.jpg");
+                color.agregarTexturaConParametrosUV("maps/tierra.jpg",0.0,0.0,0.0,0.0);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[1]);
+
+                var objeto = new Objeto3D();
+                //var circulo = new ArcoCircunferencia(radio, 256, 180, 90);
+                //this.nivel = circulo.crear();
+                //circulo = new ArcoCircunferencia(0, 256);
+                //this.recorrido = circulo.crear();
+                var esfera = new Esfera(radio,256,256);
                 var superficie = esfera.crearSuperficieRevolucion();
                 objeto.setGeometria(superficie);
-                objeto.setColor(color[0],color[1],color[2]);
+                objeto.setColor(color);
 
                 return objeto;
 
@@ -2918,6 +3196,14 @@
                 ];
 
 
+                var color = new Color();
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.5,1.0,1.0);
+                color.setGlossiness(10);
+                color.agregarTexturaConParametrosUV("maps/shiphull.jpg");
+                color.agregarTexturaConParametrosUV("maps/shiphull.jpg",0.0,0.0,0.0,0.0);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[1]);
 
                 var objeto = new Objeto3D();
                 var hijo = new Objeto3D();
@@ -2934,9 +3220,18 @@
                 var superficie = superficieAux.crearSuperficieRevolucion();
                 //var superficie = superficieRevolucionCompleta(nivel,recorrido,true);
                 hijo.setGeometria(superficie);
-                hijo.setColor(colorCentral[0],colorCentral[1],colorCentral[2]);
+                hijo.setColor(color);
                 hijo.setPosicion(0.0,0.0,+(largoC1+largoC2+largoC3+largoC4)/2);
                 objeto.agregarHijo(hijo);
+
+                color = new Color();
+                color.setColorAmbiente(1.0,1.0,1.0);
+                color.setColorDifuso(1.0,1.0,1.0);
+                color.setColorEspecular(1.0,1.0,1.0);
+                color.setFactoresLuminosidad(0.1,0.2,1.0);
+                color.setGlossiness(10);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[2]);
 
                 figura = new Bezier2D(20, gradoBezierCohete);
                 figura.setPuntosDeControl(puntosControlCohete);
@@ -2950,10 +3245,80 @@
                 //superficie = superficieRevolucionCompleta(nivel,recorrido,true,true,false);
                 hijo = new Objeto3D();
                 hijo.setGeometria(superficie);
-                hijo.setColor(colorCohete[0],colorCohete[1],colorCohete[2]);
+                hijo.setColor(color);
                 hijo.setRotacion(0,1,0,Math.PI);
                 hijo.setPosicion(0.0,0.0,-(largoC1+largoC2+largoC3+largoC4)/2-0.0001);
                 objeto.agregarHijo(hijo);
+
+
+                color = new Color();
+                color.setColorAmbiente(1.0,0.0,0.0);
+                color.setColorDifuso(0.0,0.0,0.0);
+                color.setColorEspecular(0.0,0.0,0.0);
+                color.setFactoresLuminosidad(1.0,1.0,1.0);
+                color.setGlossiness(1);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[2]);
+                superficieAux = new Cilindro(0.01,0.02);
+                superficie = superficieAux.crearSuperficieBarrido();
+                hijo = new Objeto3D();
+                hijo.setGeometria(superficie);
+                hijo.setColor(color);
+                hijo.setPosicion(-(radioC4+radioC3)/2-0.01,0.0,(largoC2/4+largoC3+largoC4)/2);
+                
+
+                var luz = new FuenteLuz();
+                luz.setColor(1.0,0.0,0.0);
+                luz.setCoeficienteDistacia(0.0,10.0,1.0);
+                hijo.agregarHijo(luz);
+                objeto.agregarHijo(hijo);
+                luces.agregarFuenteLuz(luz);
+
+                color = new Color();
+                color.setColorAmbiente(0.0,1.0,0.0);
+                color.setColorDifuso(0.0,0.0,0.0);
+                color.setColorEspecular(0.0,0.0,0.0);
+                color.setFactoresLuminosidad(1.0,1.0,1.0);
+                color.setGlossiness(1);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[2]);
+                hijo = new Objeto3D();
+                hijo.setGeometria(superficie);
+                hijo.setColor(color);
+                hijo.setPosicion((radioC4+radioC3)/2+0.01,0.0,(largoC2/4+largoC3+largoC4)/2);
+
+                luz = new FuenteLuz();
+                luz.setColor(0.0,1.0,0.0);
+                luz.setCoeficienteDistacia(0.0,10.0,1.0);
+                hijo.agregarHijo(luz);
+                objeto.agregarHijo(hijo);
+                luces.agregarFuenteLuz(luz);
+
+                color = new Color();
+                color.setColorAmbiente(1.0,1.0,0.8);
+                color.setColorDifuso(0.0,0.0,0.0);
+                color.setColorEspecular(0.0,0.0,0.0);
+                color.setFactoresLuminosidad(1.0,1.0,1.0);
+                color.setGlossiness(1);
+                color.setVertexShader(vertexShader[1]);
+                color.setFragmentShader(fragmentShader[2]);
+
+                hijo = new Objeto3D();
+                superficieAux = new Esfera(0.01);
+                superficie = superficieAux.crearSuperficieBarrido();
+                hijo.setGeometria(superficie);
+                hijo.setColor(color);
+                hijo.setPosicion(0.0,0.0,(largoC1+largoC2+largoC3+largoC4)/2 + 0.0001);
+
+                luz = new FuenteLuz();
+                luz.setColor(1.0,1.0,0.8);
+                luz.setDireccion(0.0,0.0,1.0);
+                luz.setCoeficienteDistacia(0.0,0.2,1.0);
+                luz.setAnguloMaximo(45);
+                luz.setDecaiminetoAngulo(1);
+                hijo.agregarHijo(luz);
+                objeto.agregarHijo(hijo);
+                luces.agregarFuenteLuz(luz);
 
                 return objeto;
             }
@@ -3003,17 +3368,28 @@
                 });
             }
             
+            // luces
+
+            function crearLuzAmbiente()
+            {
+                var luz = new FuenteLuz;
+                luz.setDireccion(0.0,0.0,-1.0);
+                luz.setDirectividad(true);
+                luces.agregarFuenteLuz(luz);
+            }
+
             // inicializar objetos
             
             function inicializarObjetos()
             {
+                crearLuzAmbiente();
 
                 objetos3D = new Objeto3D();
 
                 var hijo = generarTierra();
 
-                hijo.setPosicion(0,-300,-500);
-                hijo.setRotacion(1,0,0,-Math.PI/4)
+                hijo.setPosicion(0,-550,0);
+                hijo.setRotacion(-0.5,0,1,-Math.PI/6)
                 objetos3D.agregarHijo(hijo);
 
                 var hijo2 = generarEstacionEspacial();
